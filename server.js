@@ -28,9 +28,7 @@ let lastEnteredPhone = "";
 let pairingErrorMessage = "";
 let sock = null;
 let productCatalog = [];
-let compactCatalogText = "";
 const conversationHistory = new Map();
-const userMessageBuffers = new Map();
 let backupTimer = null;
 
 // ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
@@ -81,9 +79,6 @@ async function updateCatalog() {
     const res = await axios.get('https://techxzone.shop/api.php?action=bot_catalog', { timeout: 8000 });
     if (res.data && res.data.products) {
       productCatalog = res.data.products;
-      compactCatalogText = productCatalog.map(p => 
-        `• [ID:${p.id}] ${p.name} | মূল্য: ৳${p.price} | স্টক: ${p.in_stock} | লিংক: ${p.buy_link}`
-      ).join('\n');
       console.log(`[TechXZone] মোট ${productCatalog.length} টি প্রোডাক্ট সিঙ্ক হয়েছে।`);
     }
   } catch (err) {}
@@ -91,7 +86,28 @@ async function updateCatalog() {
 updateCatalog();
 setInterval(updateCatalog, 15 * 60 * 1000);
 
-// ৪. সাইটে সরাসরি অর্ডার তৈরি
+// ৪. স্মার্ট ক্যাটালগ ফিল্টারিং (যা এআইকে ১ সেকেন্ডে ফাস্ট করে)
+function getSmartCatalog(userQuery) {
+  if (!productCatalog.length) return "পণ্য লোড হচ্ছে...";
+  const q = (userQuery || "").toLowerCase();
+  
+  // কাস্টমারের মেসেজ অনুযায়ী প্রাসঙ্গিক পণ্য ফিল্টার
+  let filtered = productCatalog.filter(p => {
+    const name = (p.name || "").toLowerCase();
+    const cat = (p.category || "").toLowerCase();
+    return q.split(" ").some(word => word.length > 2 && (name.includes(word) || cat.includes(word)));
+  });
+
+  if (!filtered.length) {
+    filtered = productCatalog.slice(0, 15); // না মিললে টপ ১৫টি পণ্য
+  }
+
+  return filtered.slice(0, 15).map(p => 
+    `• [ID:${p.id}] ${p.name} | মূল্য: ৳${p.price} | স্টক: ${p.in_stock} | লিংক: ${p.buy_link}`
+  ).join('\n');
+}
+
+// ৫. সাইটে সরাসরি অর্ডার বুকিং
 async function createWebsiteOrder(orderInfo) {
   try {
     const orderId = `TXZ-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -134,45 +150,49 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৫. আল্ট্রা-ফাস্ট মানবিক AI ইঞ্জিন
+// ৬. সুপারফাস্ট মানবিক এআই ইঞ্জিন (Gemini 3.5 Flash-Lite)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
   const cleanUserPhone = userPhone.replace(/[^0-9]/g, '').slice(-11);
+  const relevantCatalog = getSmartCatalog(userMessage);
 
   const systemInstruction = `
-তুমি TechXZone (techxzone.shop) এর অত্যন্ত আন্তরিক, বিনয়ী ও বাস্তব সেলস এক্সিকিউটিভ (মানুষ)। তোমার নাম TechXZone টিম।
+তুমি TechXZone (techxzone.shop) এর প্রধান সেলস এক্সিকিউটিভ (বাস্তব মানুষ)। তোমার নাম TechXZone সাপোর্ট টিম।
 
-নিয়মাবলী:
-১. মানুষের মতো অনুভূতি: রক্ত-মাংসের মানুষের মতো মিষ্টি ও ভদ্র ভাষায় কথা বলবে। কাস্টমারকে "ভাইয়া" সম্বোধন করবে। কখনো বলবে না তুমি বট।
-২. প্রোডাক্ট ও দাম: কাস্টমার যা খুঁজবে (যেমন: ফ্যান, ব্যাটারি, ইউপিএস), তালিকা দেখে সঠিক নাম, দাম ও কেনার লিংক দেবে।
-৩. ক্যাশ অন ডেলিভারি: মনে করিয়ে দেবে সারা দেশে ১০০% ক্যাশ অন ডেলিভারি (পণ্য হাতে পেয়ে চেক করে টাকা দেওয়া)।
-৪. সুন্দর অর্ডার ফর্ম পাঠানোর নিয়ম (খুব গুরুত্বপূর্ণ):
+আচরণ ও নিয়মানুযায়ী কথা বলার ধরন:
+১. মানুষের মতো অনুভূতি: রক্ত-মাংসের মানুষের মতো মিষ্টি ও আন্তরিক ভাষায় কথা বলবে। কাস্টমারকে "ভাইয়া" সম্বোধন করবে। কোনো অবস্থাতেই বলবে না তুমি এআই বা রোবট।
+২. প্রোডাক্ট ও দাম: কাস্টমার যা খুঁজবে (যেমন: ফ্যান, ব্যাটারি, ইউপিএস), নিচে দেওয়া তালিকা দেখে সঠিক নাম, দাম ও সরাসরি অর্ডার লিংক (buy_link) দিয়ে দেবে।
+৩. ক্যাশ অন ডেলিভারি: মনে করিয়ে দেবে সারা দেশে ১০০% ক্যাশ অন ডেলিভারিতে পার্সেল চেক করে টাকা দেওয়ার সুবিধা আছে।
+
+৪. 📋 সুন্দর অর্ডার ফর্ম পাঠানোর নিয়ম (খুব গুরুত্বপূর্ণ):
    - কাস্টমার যদি পণ্য নিতে চায়, বা বলে "অর্ডার কনফার্ম করেন", "১ নম্বরটা নিব", কিন্তু নাম ও সম্পূর্ণ ঠিকানা দেয়নি—তখন তাকে মিষ্টি করে হুবহু নিচের সুন্দর ফর্মটি পাঠিয়ে দেবে:
 
 🎉 *দারুণ ভাইয়া! অর্ডারটি কনফার্ম করতে অনুগ্রহ করে নিচের ফর্মটি পূরণ করে পাঠিয়ে দিন:*
 
-📝 *অর্ডার ফর্ম:*
-• আপনার নাম: 
-• মোবাইল নম্বর: ${cleanUserPhone}
-• সম্পূর্ণ ঠিকানা (বাসা/রোড/এলাকা): 
-• জেলা ও থানা: 
-• পণ্যের নাম ও পরিমাণ: 
-
-*(আপনি চাইলে উপরের লেখাটি কপি করে শুধু আপনার তথ্য বসিয়ে পাঠিয়ে দিতে পারেন)*
-🚚 সারা দেশে ১০০% ক্যাশ অন ডেলিভারি (পার্সেল হাতে পেয়ে টাকা দিবেন)।
+📋 *ক্যাশ অন ডেলিভারি অর্ডার ফর্ম:*
+━━━━━━━━━━━━━━━━━━━━
+১. আপনার পুরো নাম:
+২. মোবাইল নম্বর: ${cleanUserPhone}
+৩. সম্পূর্ণ ঠিকানা (বাসা/রোড/এলাকা): 
+৪. জেলা ও থানা: 
+৫. পণ্যের নাম ও সংখ্যা: 
+━━━━━━━━━━━━━━━━━━━━
+💡 *(উপরের লেখাটি কপি করে শুধু আপনার নাম ও ঠিকানা বসিয়ে সেন্ড করে দিন)*
+🚚 সারা দেশে ১০০% ক্যাশ অন ডেলিভারি (পার্সেল হাতে পেয়ে দেখে টাকা দিবেন)।
 
 ৫. সরাসরি অর্ডার বুকিং:
-   - কাস্টমার যখন তার নাম ও সম্পূর্ণ ঠিকানা পাঠিয়ে দেবে, তখন তার অর্ডারটি নিশ্চিত করার জন্য উত্তরের একদম শেষে এই গোপন কোডটি বসিয়ে দেবে:
-   [[ORDER:{"product_id":ID,"product_name":"পণ্যের নাম","price":দাম,"qty":১,"name":"গ্রাহকের নাম","phone":"${cleanUserPhone}","address":"গ্রাহকের ঠিকানা"}]]
+   - কাস্টমার যখন নাম ও ঠিকানা পাঠিয়ে দেবে, তখন তার অর্ডারটি ওয়েবসাইটে বুক করার জন্য উত্তরের একদম শেষে এই কোডটি দেবে:
+   [[ORDER:{"product_id":ID,"product_name":"নাম","price":দাম,"qty":১,"name":"নাম","phone":"${cleanUserPhone}","address":"ঠিকানা"}]]
 
-প্রোডাক্ট তালিকা:
-${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
+প্রাসঙ্গিক প্রোডাক্ট তালিকা:
+${relevantCatalog}
   `;
 
-  const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"];
+  // গুগলের সুপারফাস্ট লাইটনিং মডেল
+  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"];
 
   let rawHistory = conversationHistory.get(userPhone) || [];
   let cleanHistory = [];
@@ -189,7 +209,7 @@ ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
       const model = genAI.getGenerativeModel({
         model: modelName,
         systemInstruction: systemInstruction,
-        generationConfig: { maxOutputTokens: 650, temperature: 0.6 }
+        generationConfig: { maxOutputTokens: 600, temperature: 0.6 }
       });
 
       let replyText = "";
@@ -203,7 +223,7 @@ ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
         replyText = result.response.text();
       }
 
-      // অর্ডার বুকিং সনাক্তকরণ
+      // অর্ডার প্লেসমেন্ট
       const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
       if (orderMatch && orderMatch[1]) {
         try {
@@ -212,7 +232,7 @@ ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
 
           const orderResult = await createWebsiteOrder(orderData);
           if (orderResult.success) {
-            const invoiceNote = `\n\n🎉 *আলহামদুলিল্লাহ ভাইয়া! আপনার অর্ডারটি নিশ্চিত করা হয়েছে।* \n🆔 *অর্ডার আইডি:* #${orderResult.orderId}\n📦 *পণ্য:* ${orderData.product_name}\n💰 *সর্বমোট বিল:* ৳${orderResult.grandTotal.toLocaleString()} (ক্যাশ অন ডেলিভারি)\n🚚 পার্সেল পৌঁছে দিলে দেখে মূল্য পরিশোধ করবেন। ধন্যবাদ TechXZone এর সাথে থাকার জন্য! ❤️`;
+            const invoiceNote = `\n\n🎉 *আলহামদুলিল্লাহ ভাইয়া! আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে।* \n🆔 *অর্ডার আইডি:* #${orderResult.orderId}\n📦 *পণ্য:* ${orderData.product_name}\n💰 *সর্বমোট বিল:* ৳${orderResult.grandTotal.toLocaleString()} (ক্যাশ অন ডেলিভারি)\n🚚 পার্সেল পৌঁছে দিলে দেখে মূল্য পরিশোধ করবেন। ধন্যবাদ TechXZone এর সাথে থাকার জন্য! ❤️`;
             replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '') + invoiceNote;
           }
         } catch (err) {
@@ -228,10 +248,10 @@ ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
     } catch (err) {}
   }
 
-  return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি নিতে চাচ্ছেন একটু জানাবেন কি?";
+  return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৬. WhatsApp Baileys ইঞ্জিন (টাইপিং ইন্ডিকেটর ও ফাস্ট রেসপন্স)
+// ৭. WhatsApp Baileys ইঞ্জিন (লাইভ টাইপিং ও সাবস্ক্রিপশন সহ)
 async function initWhatsApp() {
   try {
     await restoreFullSession();
@@ -293,25 +313,19 @@ async function initWhatsApp() {
 
         console.log(`[কাস্টমার]: ${text}`);
 
-        // 🚀 কাস্টমার মেসেজ দিলেই সাথে সাথে "typing..." দেখানো
-        await sock.sendPresenceUpdate('composing', sender);
+        // 🚀 ১. সাথে সাথে টাইপিং সাবস্ক্রাইব ও "typing..." শুরু করা (রিয়েল-টাইম ফিল)
+        try {
+          await sock.presenceSubscribe(sender);
+          await sock.sendPresenceUpdate('composing', sender);
+        } catch (e) {}
 
-        let currentBuffer = userMessageBuffers.get(sender) || [];
-        currentBuffer.push(text);
-        userMessageBuffers.set(sender, currentBuffer);
-
-        // মাত্র ০.৫ সেকেন্ড বাফার (আগের ২ সেকেন্ডের চেয়ে ৪ গুণ ফাস্ট!)
-        setTimeout(async () => {
-          const bufferedMsgs = userMessageBuffers.get(sender);
-          if (!bufferedMsgs || bufferedMsgs.length === 0) return;
-
-          userMessageBuffers.delete(sender);
-          const combinedMessage = bufferedMsgs.join(' ');
-
-          const aiReply = await generateAiReply(sender, combinedMessage);
-          await sock.sendMessage(sender, { text: aiReply });
+        // ২. তাত্ক্ষণিক এআই কল ও দ্রুত রিপ্লাই
+        const aiReply = await generateAiReply(sender, text);
+        await sock.sendMessage(sender, { text: aiReply });
+        
+        try {
           await sock.sendPresenceUpdate('paused', sender);
-        }, 500);
+        } catch (e) {}
 
       } catch (err) {}
     });
@@ -321,14 +335,14 @@ async function initWhatsApp() {
   }
 }
 
-// ৭. অটো পিংগার (Keep Alive)
+// ৮. অটো পিংগার
 if (process.env.RENDER_EXTERNAL_URL) {
   setInterval(() => {
     axios.get(process.env.RENDER_EXTERNAL_URL).catch(() => {});
   }, 4 * 60 * 1000);
 }
 
-// ৮. ড্যাশবোর্ড
+// ৯. ড্যাশবোর্ড
 app.get('/', (req, res) => {
   const cleanCodeNoDash = pairingCode ? pairingCode.replace(/[^A-Za-z0-9]/g, '') : '';
 
@@ -338,9 +352,9 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>TechXZone Ultra-Fast AI & Order Bot</title>
+      <title>TechXZone Ultra-Fast Bot</title>
       <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f1f5f9; color: #0f172a; padding: 15px; margin: 0; }
+        body { font-family: sans-serif; background: #f1f5f9; color: #0f172a; padding: 15px; margin: 0; }
         .card { max-width: 440px; margin: 20px auto; background: #fff; border-radius: 24px; padding: 22px; box-shadow: 0 10px 25px rgba(0,0,0,0.07); border: 1px solid #e2e8f0; }
         input[type="text"] { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #cbd5e1; font-size: 15px; margin-top: 8px; outline: none; }
         .btn { width: 100%; border: none; padding: 13px; border-radius: 14px; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; }
@@ -369,15 +383,13 @@ app.get('/', (req, res) => {
     </head>
     <body>
       <div class="card">
-        <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp AI</h2>
-        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 16px;">Ultra-Fast Response + Direct Order System</p>
-
-        ${pairingErrorMessage ? `<div class="alert-error">⚠️ ${pairingErrorMessage}</div>` : ''}
+        <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp Bot</h2>
+        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 16px;">Real-Time Fast Speed & Live Typing</p>
 
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
               <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
-              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট বিদ্যুৎগতিতে উত্তর দিচ্ছে ও অর্ডার নিচ্ছে।</p>
+              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট বিদ্যুৎগতিতে লাইভ টাইপিং দিয়ে উত্তর দিচ্ছে।</p>
               <form action="/hard-reset" method="POST">
                 <button type="submit" class="btn btn-danger">লগআউট / ডিসকানেক্ট করুন</button>
               </form>
@@ -416,7 +428,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ৯. পেয়ারিং কোড রিকোয়েস্ট
+// ১০. পেয়ারিং কোড রিকোয়েস্ট
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
@@ -441,7 +453,7 @@ app.post('/get-code', async (req, res) => {
   res.redirect('/');
 });
 
-// ১০. কোড রি-সেন্ড
+// ১১. কোড রি-সেন্ড
 app.post('/resend-code', async (req, res) => {
   if (lastEnteredPhone && sock && !sock.authState.creds.registered) {
     try {
@@ -452,13 +464,13 @@ app.post('/resend-code', async (req, res) => {
   res.redirect('/');
 });
 
-// ১১. নম্বর পরিবর্তন
+// ১২. নম্বর পরিবর্তন
 app.post('/change-number', (req, res) => {
   pairingCode = null;
   res.redirect('/');
 });
 
-// ১২. হার্ড রিসেট
+// ১৩. হার্ড রিসেট
 app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   lastEnteredPhone = "";
