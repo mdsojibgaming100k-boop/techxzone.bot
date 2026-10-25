@@ -19,24 +19,8 @@ const PORT = process.env.PORT || 3000;
 const SESSION_DIR = path.join(__dirname, 'txz_auth_session');
 const CATALOG_CACHE_FILE = path.join(__dirname, 'catalog_cache.json');
 
-// অ্যাডমিনের WhatsApp নম্বর
+// অ্যাডমিনের WhatsApp নম্বর (অর্ডার নোটিফিকেশন পাওয়ার জন্য)
 const ADMIN_PHONE = process.env.ADMIN_PHONE || "8801404277094"; 
-
-// 📋 প্রিমিয়াম বোল্ড করা WhatsApp অর্ডার ফর্ম (সম্পূর্ণ আলাদা মেসেজ হিসেবে যাবে)
-const ORDER_FORM_TEXT = `📋 *ক্যাশ অন ডেলিভারি অর্ডার ফর্ম*
-━━━━━━━━━━━━━━━━━━━━
-
-*১. আপনার পুরো নাম :* 
-
-*২. মোবাইল নম্বর :* 
-
-*৩. সম্পূর্ণ ঠিকানা (বাসা/রোড/এলাকা) :* 
-
-*৪. জেলা ও থানা :* 
-
-*৫. পণ্যের নাম ও সংখ্যা :* 
-
-━━━━━━━━━━━━━━━━━━━━`;
 
 // ১. Gemini API Key
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
@@ -200,13 +184,20 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. মানবিক এআই ইঞ্জিন (নির্দেশনায় ফর্ম ট্যাগ যুক্ত)
+// ৬. মানবিক এআই ইঞ্জিন (নম্বর ও পণ্যের নাম অটো ফিলাপ সহ)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
-  const cleanUserPhone = userPhone.replace(/[^0-9]/g, '').slice(-11);
+  // কাস্টমারের ফোন নম্বর ফরম্যাট করা (০১৭... আকারে)
+  let cleanUserPhone = userPhone.replace(/@.*$/, '').replace(/[^0-9]/g, '');
+  if (cleanUserPhone.startsWith('880')) {
+    cleanUserPhone = '0' + cleanUserPhone.slice(3);
+  } else if (cleanUserPhone.startsWith('88') && cleanUserPhone.length === 13) {
+    cleanUserPhone = cleanUserPhone.slice(2);
+  }
+
   const relevantCatalog = getSmartCatalog(userMessage);
 
   const systemInstruction = `
@@ -214,17 +205,35 @@ async function generateAiReply(userPhone, userMessage) {
 
 আচরণ ও নিয়মানুযায়ী কথা বলার ধরন:
 ১. মানুষের মতো অনুভূতি: রক্ত-মাংসের মানুষের মতো মিষ্টি ও আন্তরিক ভাষায় কথা বলবে। কাস্টমারকে "ভাইয়া" সম্বোধন করবে। কোনো অবস্থাতেই বলবে না তুমি এআই বা রোবট।
-২. প্রোডাক্ট ও দাম: কাস্টমার যা খুঁজবে, তালিকা দেখে সঠিক নাম, দাম ও সরাসরি অর্ডার লিংক (buy_link) দিয়ে দেবে।
+২. প্রোডাক্ট ও দাম: কাস্টমার যা খুঁজবে, নিচে দেওয়া তালিকা দেখে সঠিক নাম, দাম ও সরাসরি অর্ডার লিংক (buy_link) দিয়ে দেবে।
 ৩. ক্যাশ অন ডেলিভারি: মনে করিয়ে দেবে সারা দেশে ১০০% ক্যাশ অন ডেলিভারিতে পার্সেল চেক করে টাকা দেওয়ার সুবিধা আছে।
 
-৪. 📋 অর্ডার ফর্ম পাঠানোর নিয়ম (খুব গুরুত্বপূর্ণ):
-   - কাস্টমার যদি পণ্য নিতে চায়, বা বলে "অর্ডার করব", "অর্ডার কনফার্ম করেন", "১ নম্বরটা নিব", কিন্তু নাম ও সম্পূর্ণ ঠিকানা দেয়নি—তখন তোমার উত্তরে অবশ্যই শুরুতে \`[[SEND_FORM]]\` ট্যাগটি দিয়ে দেবে।
-   - তুমি উত্তরের ভেতরে কোনো ফর্ম টাইপ করবে না! সিস্টেম নিজে থেকে প্রিমিয়াম ফর্ম পাঠিয়ে দেবে।
-   - তুমি শুধু কাস্টমারকে মিষ্টি করে বলবে: "দারুণ ভাইয়া! অর্ডারটি কনফার্ম করতে অনুগ্রহ করে উপরের ফর্মটি কপি করে আপনার নাম ও ঠিকানা লিখে পাঠিয়ে দিন। সারা দেশে পার্সেল হাতে পেয়ে দেখে টাকা দিতে পারবেন।"
+৪. 📋 সুন্দর অর্ডার ফর্ম পাঠানোর নিয়ম (খুব গুরুত্বপূর্ণ):
+   - কাস্টমার যদি পণ্য নিতে চায়, বা বলে "অর্ডার করব", "অর্ডার কনফার্ম করেন", "১ নম্বরটা নিব", কিন্তু নাম ও সম্পূর্ণ ঠিকানা দেয়নি—তখন তাকে হুবহু নিচের বোল্ড ও স্পেস দেওয়া ফর্মটি দেবে।
+   - ফর্মে কাস্টমারের মোবাইল নম্বরটি ${cleanUserPhone} অটো বসিয়ে দেবে এবং কাস্টমার যে পণ্যটি নিতে চাচ্ছে তার নাম ও সংখ্যা (যেমন: রাউটার মিনি ইউপিএস - ১ টি) অটো বসিয়ে দেবে:
+
+📋 *ক্যাশ অন ডেলিভারি অর্ডার ফর্ম*
+━━━━━━━━━━━━━━━━━━━━
+
+*১. আপনার পুরো নাম :* 
+
+*২. মোবাইল নম্বর :* ${cleanUserPhone}
+
+*৩. সম্পূর্ণ ঠিকানা (বাসা/রোড/এলাকা) :* 
+
+*৪. জেলা ও থানা :* 
+
+*৫. পণ্যের নাম ও সংখ্যা :* [পণ্যের নাম ও সংখ্যা এখানে বসাবে]
+
+━━━━━━━━━━━━━━━━━━━━
+
+🎉 *দারুণ ভাইয়া!* 
+💡 *টিপস:* উপরের ফর্মটি চেপে ধরে কপি করে শুধু আপনার নাম ও ঠিকানা বসিয়ে পাঠিয়ে দিন।
+🚚 সারা দেশে ১০০% ক্যাশ অন ডেলিভারি (পার্সেল হাতে পেয়ে দেখে মূল্য পরিশোধ করবেন)।
 
 ৫. সরাসরি অর্ডার বুকিং:
    - কাস্টমার যখন নাম ও ঠিকানা পাঠিয়ে দেবে, তখন তার অর্ডারটি ওয়েবসাইটে বুক করার জন্য উত্তরের একদম শেষে এই কোডটি দেবে:
-   [[ORDER:{"product_id":ID,"product_name":"নাম","price":দাম,"qty":১,"name":"নাম","phone":"মোবাইল নম্বর","address":"ঠিকানা"}]]
+   [[ORDER:{"product_id":ID,"product_name":"নাম","price":দাম,"qty":১,"name":"নাম","phone":"${cleanUserPhone}","address":"ঠিকানা"}]]
 
 প্রাসঙ্গিক প্রোডাক্ট তালিকা:
 ${relevantCatalog}
@@ -289,7 +298,7 @@ ${relevantCatalog}
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৭. WhatsApp Baileys ইঞ্জিন (ফর্ম সম্পূর্ণ আলাদা মেসেজে ডেলিভারি করার লজিক)
+// ৭. WhatsApp Baileys ইঞ্জিন (ফর্ম ও টেক্সট স্বয়ংক্রিয়ভাবে স্প্লিট করে পাঠানো)
 async function initWhatsApp() {
   try {
     if (sock) {
@@ -370,27 +379,27 @@ async function initWhatsApp() {
 
         const aiReply = await generateAiReply(sender, text);
 
-        // 🚀 ফর্ম আলাদা মেসেজ হিসেবে পাঠানোর গ্যারান্টিযুক্ত সিস্টেম
-        const isFormRequested = aiReply.includes('[[SEND_FORM]]') || aiReply.includes('ক্যাশ অন ডেলিভারি অর্ডার ফর্ম');
+        // 🚀 ফর্মটিকে নিখুঁতভাবে ফিল্টার করে আলাদা ১ম মেসেজ হিসেবে পাঠানো
+        const formRegex = /(📋\s*\*?ক্যাশ অন ডেলিভারি অর্ডার ফর্ম\*?[\s\S]*?━━━━━━━━━━━━━━━━━━━━)/;
+        const match = aiReply.match(formRegex);
 
-        if (isFormRequested) {
-          // ১. ১ম মেসেজে শুধুমাত্র পিওর বোল্ড করা ফাঁকা ফর্মটি যাবে
-          await sock.sendMessage(sender, { text: ORDER_FORM_TEXT });
-          
-          await delay(1000); // ১ সেকেন্ড বিরতি
-
-          // ২. এআই-এর বাকি কথাগুলো ফিল্টার করে ২য় মেসেজ হিসেবে যাবে
-          let instructionText = aiReply
-            .replace(/\[\[SEND_FORM\]\]/g, '')
-            .replace(/📋[\s\S]*?━━━━━━━━━━━━━━━━━━━━/g, '') // এআই কোনো ভুল ফর্ম লিখলে তা বাদ দেওয়া
+        if (match) {
+          const formText = match[1].trim();
+          const otherText = aiReply
+            .replace(formRegex, '')
             .replace(/\[\[ORDER:(.*?)\]\]/g, '')
             .trim();
 
-          if (instructionText) {
-            await sock.sendMessage(sender, { text: instructionText });
+          // ১ম মেসেজ: শুধু বোল্ড ও স্পেস দেওয়া ফর্ম (নম্বর ও প্রোডাক্ট অটো বসা থাকবে)
+          await sock.sendMessage(sender, { text: formText });
+
+          // ২য় মেসেজ: বাকি সব টিপস ও ডেলিভারি তথ্য
+          if (otherText) {
+            await delay(1000);
+            await sock.sendMessage(sender, { text: otherText });
           }
         } else {
-          // সাধারণ কথা হলে সরাসরি পাঠিয়ে দেবে
+          // সাধারণ উত্তর হলে একবারে যাবে
           await sock.sendMessage(sender, { text: aiReply });
         }
         
@@ -602,13 +611,7 @@ app.post('/api/ai-chat', async (req, res) => {
     }
 
     const reply = await generateAiReply(phone, message);
-    
-    // ওয়েবসাইট চ্যাটে সুন্দরভাবে সাজিয়ে দেখানো
-    let cleanReply = reply;
-    if (reply.includes('[[SEND_FORM]]')) {
-      cleanReply = ORDER_FORM_TEXT + "\n\n" + reply.replace(/\[\[SEND_FORM\]\]/g, '').trim();
-    }
-    return res.json({ success: true, reply: cleanReply });
+    return res.json({ success: true, reply: reply });
   } catch (err) {
     return res.json({ success: false, reply: "জি ভাইয়া! একটু কারিগরি সমস্যা হচ্ছে।" });
   }
