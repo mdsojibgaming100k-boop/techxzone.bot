@@ -14,6 +14,14 @@ const app = express();
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
+// 🌐 ওয়েবসাইটের সাথে সরাসরি কানেক্ট করার জন্য CORS পারমিশন
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  if (req.method === 'OPTIONS') return res.sendStatus(200);
+  next();
+});
+
 const PORT = process.env.PORT || 3000;
 const SESSION_DIR = path.join(__dirname, 'txz_auth_session');
 
@@ -86,12 +94,11 @@ async function updateCatalog() {
 updateCatalog();
 setInterval(updateCatalog, 15 * 60 * 1000);
 
-// ৪. স্মার্ট ক্যাটালগ ফিল্টারিং (যা এআইকে ১ সেকেন্ডে ফাস্ট করে)
+// ৪. স্মার্ট ক্যাটালগ ফিল্টারিং
 function getSmartCatalog(userQuery) {
   if (!productCatalog.length) return "পণ্য লোড হচ্ছে...";
   const q = (userQuery || "").toLowerCase();
   
-  // কাস্টমারের মেসেজ অনুযায়ী প্রাসঙ্গিক পণ্য ফিল্টার
   let filtered = productCatalog.filter(p => {
     const name = (p.name || "").toLowerCase();
     const cat = (p.category || "").toLowerCase();
@@ -99,7 +106,7 @@ function getSmartCatalog(userQuery) {
   });
 
   if (!filtered.length) {
-    filtered = productCatalog.slice(0, 15); // না মিললে টপ ১৫টি পণ্য
+    filtered = productCatalog.slice(0, 15);
   }
 
   return filtered.slice(0, 15).map(p => 
@@ -123,7 +130,7 @@ async function createWebsiteOrder(orderInfo) {
       district: "ঢাকা",
       upazila: "",
       address: orderInfo.address,
-      customerNote: `WhatsApp Bot Direct Order (${orderInfo.product_name})`,
+      customerNote: `WhatsApp/Website Bot Direct Order (${orderInfo.product_name})`,
       paymentMethod: "Cash on Delivery",
       items: [{
         id: orderInfo.product_id || 1,
@@ -150,13 +157,13 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপারফাস্ট মানবিক এআই ইঞ্জিন (Gemini 3.5 Flash-Lite)
+// ৬. সুপারফাস্ট মানবিক এআই ইঞ্জিন
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
-  const cleanUserPhone = userPhone.replace(/[^0-9]/g, '').slice(-11);
+  const cleanUserPhone = (userPhone || "").replace(/[^0-9]/g, '').slice(-11) || "01404277094";
   const relevantCatalog = getSmartCatalog(userMessage);
 
   const systemInstruction = `
@@ -191,8 +198,8 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // গুগলের সুপারফাস্ট লাইটনিং মডেল
-  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash"];
+  // গুগলের সক্রিয় লাইটনিং মডেলগুলো
+  const modelsToTry = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"];
 
   let rawHistory = conversationHistory.get(userPhone) || [];
   let cleanHistory = [];
@@ -251,7 +258,21 @@ ${relevantCatalog}
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৭. WhatsApp Baileys ইঞ্জিন (লাইভ টাইপিং ও সাবস্ক্রিপশন সহ)
+// 🌐 ৭. ওয়েবসাইট থেকে এআই কল রিসিভ করার সরাসরি গেটওয়ে
+app.post('/api/ai-chat', async (req, res) => {
+  try {
+    const message = req.body.message || req.body.prompt || "";
+    const phone = req.body.phone || "web-user";
+    
+    // সরাসরি হোয়াটসঅ্যাপ এআই ইঞ্জিন কল
+    const reply = await generateAiReply(phone, message);
+    return res.json({ success: true, reply: reply });
+  } catch (err) {
+    return res.json({ success: true, reply: "জি ভাইয়া! একটু কারিগরি সমস্যা হচ্ছে, আবার একটু লিখুন।" });
+  }
+});
+
+// ৮. WhatsApp Baileys ইঞ্জিন
 async function initWhatsApp() {
   try {
     await restoreFullSession();
@@ -313,13 +334,11 @@ async function initWhatsApp() {
 
         console.log(`[কাস্টমার]: ${text}`);
 
-        // 🚀 ১. সাথে সাথে টাইপিং সাবস্ক্রাইব ও "typing..." শুরু করা (রিয়েল-টাইম ফিল)
         try {
           await sock.presenceSubscribe(sender);
           await sock.sendPresenceUpdate('composing', sender);
         } catch (e) {}
 
-        // ২. তাত্ক্ষণিক এআই কল ও দ্রুত রিপ্লাই
         const aiReply = await generateAiReply(sender, text);
         await sock.sendMessage(sender, { text: aiReply });
         
@@ -335,14 +354,14 @@ async function initWhatsApp() {
   }
 }
 
-// ৮. অটো পিংগার
+// ৯. অটো পিংগার
 if (process.env.RENDER_EXTERNAL_URL) {
   setInterval(() => {
     axios.get(process.env.RENDER_EXTERNAL_URL).catch(() => {});
   }, 4 * 60 * 1000);
 }
 
-// ৯. ড্যাশবোর্ড
+// ১০. ড্যাশবোর্ড
 app.get('/', (req, res) => {
   const cleanCodeNoDash = pairingCode ? pairingCode.replace(/[^A-Za-z0-9]/g, '') : '';
 
@@ -428,7 +447,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ১০. পেয়ারিং কোড রিকোয়েস্ট
+// ১১. পেয়ারিং কোড রিকোয়েস্ট
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
@@ -453,7 +472,7 @@ app.post('/get-code', async (req, res) => {
   res.redirect('/');
 });
 
-// ১১. কোড রি-সেন্ড
+// ১২. কোড রি-সেন্ড
 app.post('/resend-code', async (req, res) => {
   if (lastEnteredPhone && sock && !sock.authState.creds.registered) {
     try {
@@ -464,13 +483,13 @@ app.post('/resend-code', async (req, res) => {
   res.redirect('/');
 });
 
-// ১২. নম্বর পরিবর্তন
+// ১৩. নম্বর পরিবর্তন
 app.post('/change-number', (req, res) => {
   pairingCode = null;
   res.redirect('/');
 });
 
-// ১৩. হার্ড রিসেট
+// ১৪. হার্ড রিসেট
 app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   lastEnteredPhone = "";
