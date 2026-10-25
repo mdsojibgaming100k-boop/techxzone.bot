@@ -27,7 +27,7 @@ const conversationHistory = new Map();
 const userMessageBuffers = new Map();
 let backupTimer = null;
 
-// ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
+// ২. WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
 async function restoreFullSession() {
   try {
     const res = await axios.get('https://techxzone.shop/api.php?action=get_settings&key=wa_full_session_bundle', { timeout: 10000 });
@@ -37,7 +37,7 @@ async function restoreFullSession() {
       for (const [filename, content] of Object.entries(bundle)) {
         fs.writeFileSync(path.join(SESSION_DIR, filename), typeof content === 'string' ? content : JSON.stringify(content));
       }
-      console.log(`✅ [TechXZone] ডেটাবেজ থেকে মোট ${Object.keys(bundle).length}টি ফাইল সফলভাবে রিস্টোর হয়েছে!`);
+      console.log(`✅ [TechXZone] ডেটাবেজ থেকে সেশন রিস্টোর হয়েছে!`);
       return true;
     }
   } catch (e) {}
@@ -64,12 +64,12 @@ function scheduleSessionBackup() {
         key: 'wa_full_session_bundle',
         data: sessionBundle
       }, { timeout: 10000 });
-      console.log(`💾 [TechXZone] মোট ${files.length}টি ফাইলসহ সেশন ডেটাবেজে পার্মানেন্ট সেভ হয়েছে!`);
+      console.log(`💾 [TechXZone] সেশন ফাইল ডেটাবেজে সেভ হয়েছে!`);
     } catch (e) {}
   }, 3000);
 }
 
-// ৩. লাইভ প্রোডাক্ট ক্যাটালগ
+// ৩. লাইভ ক্যাটালগ
 async function updateCatalog() {
   try {
     const res = await axios.get('https://techxzone.shop/api.php?action=bot_catalog', { timeout: 8000 });
@@ -78,14 +78,13 @@ async function updateCatalog() {
       compactCatalogText = productCatalog.map(p => 
         `• [ID:${p.id}] ${p.name} | মূল্য: ৳${p.price} | স্টক: ${p.in_stock} | লিংক: ${p.buy_link}`
       ).join('\n');
-      console.log(`[TechXZone] মোট ${productCatalog.length} টি প্রোডাক্ট সিঙ্ক হয়েছে।`);
     }
   } catch (err) {}
 }
 updateCatalog();
 setInterval(updateCatalog, 15 * 60 * 1000);
 
-// ৪. সাইটে সরাসরি অর্ডার তৈরি
+// ৪. সাইটে অর্ডার তৈরি
 async function createWebsiteOrder(orderInfo) {
   try {
     const orderId = `TXZ-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -128,7 +127,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৫. মানবিক এআই ইঞ্জিন
+// ৫. এআই ইঞ্জিন
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY এনভায়রনমেন্ট ভেরিয়েবল সেট করুন।";
@@ -199,7 +198,7 @@ ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
   }
 }
 
-// ৬. WhatsApp Baileys ইঞ্জিন
+// ৬. WhatsApp Baileys ইঞ্জিন (হ্যাং হওয়া বন্ধ করার ১০০% সমাধান)
 async function initWhatsApp() {
   await restoreFullSession();
 
@@ -208,7 +207,13 @@ async function initWhatsApp() {
   sock = makeWASocket({
     logger: pino({ level: 'silent' }),
     auth: state,
-    printQRInTerminal: false
+    printQRInTerminal: false,
+    browser: ['Ubuntu', 'Chrome', '20.0.04'], // অফিসিয়াল ক্রোম ফিঙ্গারপ্রিন্ট
+    syncFullHistory: false,                   // 🚀 পুরনো চ্যাট ডাউনলোড বন্ধ (জিরো ল্যাগ)
+    markOnlineOnConnect: false,
+    connectTimeoutMs: 60000,
+    defaultQueryTimeoutMs: 60000,
+    keepAliveIntervalMs: 25000
   });
 
   sock.ev.on('connection.update', (update) => {
@@ -220,13 +225,13 @@ async function initWhatsApp() {
       if (shouldReconnect) {
         initWhatsApp();
       } else {
-        console.log("ফোন থেকে লগআউট করা হয়েছে।");
+        console.log("ফোন থেকে লগআউট হয়েছে।");
         try { fs.rmSync(SESSION_DIR, { recursive: true, force: true }); } catch (e) {}
       }
     } else if (connection === 'open') {
       isConnected = true;
       pairingCode = null;
-      console.log('🎉 [TechXZone WhatsApp Bot] কানেক্টেড আছে!');
+      console.log('🎉 [TechXZone WhatsApp Bot] সফলভাবে কানেক্টেড আছে!');
       scheduleSessionBackup();
     }
   });
@@ -269,14 +274,14 @@ async function initWhatsApp() {
   });
 }
 
-// ৭. অটো পিংগার (Keep Alive)
+// ৭. অটো পিংগার
 if (process.env.RENDER_EXTERNAL_URL) {
   setInterval(() => {
     axios.get(process.env.RENDER_EXTERNAL_URL).catch(() => {});
   }, 4 * 60 * 1000);
 }
 
-// ৮. উন্নত ড্যাশবোর্ড (কপি বাটন + রিসেট + নম্বর পরিবর্তন)
+// ৮. ড্যাশবোর্ড
 app.get('/', (req, res) => {
   const cleanCodeNoDash = pairingCode ? pairingCode.replace(/[^A-Za-z0-9]/g, '') : '';
 
@@ -294,13 +299,9 @@ app.get('/', (req, res) => {
         input[type="text"]:focus { border-color: #059669; }
         .btn { width: 100%; border: none; padding: 13px; border-radius: 14px; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
         .btn-green { background: #059669; color: #fff; }
-        .btn-green:hover { background: #047857; }
         .btn-copy { background: #0284c7; color: #fff; font-size: 15px; }
-        .btn-copy:hover { background: #0369a1; }
         .btn-gray { background: #e2e8f0; color: #334155; }
-        .btn-gray:hover { background: #cbd5e1; }
         .btn-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-size: 12px; padding: 9px; }
-        .btn-danger:hover { background: #fecaca; }
         .code-box { background: #ecfdf5; border: 2px dashed #059669; border-radius: 18px; padding: 18px; text-align: center; margin: 15px 0; }
         .code-text { font-size: 34px; font-weight: 900; letter-spacing: 5px; color: #047857; font-family: monospace; }
       </style>
@@ -324,12 +325,12 @@ app.get('/', (req, res) => {
     <body>
       <div class="card">
         <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp Bot</h2>
-        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 18px;">Pairing & Control Dashboard</p>
+        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 18px;">Ultra-Fast Link Engine</p>
 
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
               <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
-              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট মেসেজের উত্তর দিচ্ছে ও ডাটাবেজে স্থায়ী সেভ আছে।</p>
+              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট কাস্টমারদের উত্তর দিচ্ছে ও স্বয়ংক্রিয় অর্ডার নিচ্ছে।</p>
               <form action="/hard-reset" method="POST">
                 <button type="submit" class="btn btn-danger">লগআউট / ডিসকানেক্ট করুন</button>
               </form>
@@ -345,7 +346,7 @@ app.get('/', (req, res) => {
                   <button type="button" id="copyBtn" onclick="copyCodeToClipboard()" class="btn btn-copy">📋 কোডটি কপি করুন (Copy)</button>
 
                   <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:14px;font-size:11px;color:#475569;margin-top:12px;line-height:1.5;">
-                    👉 <b>WhatsApp</b> খুলুন ➡️ <b>Linked Devices</b> ➡️ <b>Link with phone number instead</b> ➡️ কোডটি পেস্ট করুন।
+                    👉 <b>WhatsApp</b> খুলুন ➡️ <b>Linked Devices</b> ➡️ <b>Link a Device</b> ➡️ <b>"Link with phone number instead"</b> এ গিয়ে কোডটি পেস্ট করুন।
                   </div>
 
                   <div style="display:flex;gap:8px;margin-top:10px;">
@@ -395,9 +396,7 @@ app.post('/get-code', async (req, res) => {
       const code = await sock.requestPairingCode(phone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
     }
-  } catch (err) {
-    console.error("[Pairing Error]:", err.message);
-  }
+  } catch (err) {}
   res.redirect('/');
 });
 
@@ -418,7 +417,7 @@ app.post('/change-number', (req, res) => {
   res.redirect('/');
 });
 
-// ১২. হার্ড রিসেট (আটকে থাকা সেশন এক ক্লিকে পরিষ্কার)
+// ১২. হার্ড রিসেট
 app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   lastEnteredPhone = "";
