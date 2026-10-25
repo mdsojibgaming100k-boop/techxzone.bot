@@ -1,9 +1,17 @@
 const express = require('express');
+const QRCode = require('qrcode');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
+const { 
+  default: makeWASocket, 
+  useMultiFileAuthState, 
+  DisconnectReason, 
+  delay, 
+  Browsers, 
+  fetchLatestBaileysVersion 
+} = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
 const app = express();
@@ -19,6 +27,7 @@ let genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 let isConnected = false;
 let pairingCode = null;
+let qrCodeData = null;
 let lastEnteredPhone = "";
 let sock = null;
 let productCatalog = [];
@@ -27,7 +36,7 @@ const conversationHistory = new Map();
 const userMessageBuffers = new Map();
 let backupTimer = null;
 
-// ২. WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
+// ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
 async function restoreFullSession() {
   try {
     const res = await axios.get('https://techxzone.shop/api.php?action=get_settings&key=wa_full_session_bundle', { timeout: 10000 });
@@ -37,7 +46,7 @@ async function restoreFullSession() {
       for (const [filename, content] of Object.entries(bundle)) {
         fs.writeFileSync(path.join(SESSION_DIR, filename), typeof content === 'string' ? content : JSON.stringify(content));
       }
-      console.log(`✅ [TechXZone] ডেটাবেজ থেকে সেশন রিস্টোর হয়েছে!`);
+      console.log(`✅ [TechXZone] ডেটাবেজ থেকে মোট ${Object.keys(bundle).length}টি ফাইল রিস্টোর হয়েছে!`);
       return true;
     }
   } catch (e) {}
@@ -64,7 +73,7 @@ function scheduleSessionBackup() {
         key: 'wa_full_session_bundle',
         data: sessionBundle
       }, { timeout: 10000 });
-      console.log(`💾 [TechXZone] সেশন ফাইল ডেটাবেজে সেভ হয়েছে!`);
+      console.log(`💾 [TechXZone] সেশন ফাইল ডেটাবেজে পার্মানেন্ট সেভ হয়েছে!`);
     } catch (e) {}
   }, 3000);
 }
@@ -84,7 +93,7 @@ async function updateCatalog() {
 updateCatalog();
 setInterval(updateCatalog, 15 * 60 * 1000);
 
-// ৪. সাইটে অর্ডার তৈরি
+// ৪. সাইটে সরাসরি অর্ডার তৈরি
 async function createWebsiteOrder(orderInfo) {
   try {
     const orderId = `TXZ-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -127,25 +136,25 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৫. এআই ইঞ্জিন
+// ৫. এআই রিপ্লাই ইঞ্জিন
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
-    return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY এনভায়রনমেন্ট ভেরিয়েবল সেট করুন।";
+    return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
   try {
     const cleanUserPhone = userPhone.replace(/[^0-9]/g, '').slice(-11);
 
     const systemInstruction = `
-তুমি TechXZone (techxzone.shop) এর একজন অত্যন্ত আন্তরিক, বিনয়ী ও বাস্তব সেলস এক্সিকিউটিভ (মানুষ)। তোমার নাম TechXZone সাপোর্ট টিম।
+তুমি TechXZone (techxzone.shop) এর অত্যন্ত আন্তরিক, বিনয়ী ও বাস্তব সেলস এক্সিকিউটিভ (মানুষ)। তোমার নাম TechXZone সাপোর্ট টিম।
 
 নিয়মাবলী:
-১. মানুষের মতো অনুভূতি: রক্ত-মাংসের মানুষের মতো মিষ্টি ও ভদ্র ভাষায় কথা বলবে। কাস্টমারকে "ভাইয়া" সম্বোধন করবে। কখনো বলবে না তুমি এআই বা বট। কোনো ভুল হলে সাথে সাথে আন্তরিকভাবে ক্ষমা চাইবে ("দুঃখিত ভাইয়া, বুঝতে ভুল হয়েছিল...")।
-২. প্রোডাক্ট ও দাম: কাস্টমার যে পণ্য খুঁজবে, নিচের তালিকা দেখে তার নাম, সঠিক দাম ও লিংক দেবে।
-৩. সরাসরি WhatsApp-এ অর্ডার নেওয়ার নিয়ম:
-   - কাস্টমার যদি বলে "অর্ডার কনফার্ম করেন" বা "১ নম্বরটা নিব", কিন্তু নাম ও ঠিকানা দেয়নি—তখন তাকে মিষ্টি করে বলবে: "জি ভাইয়া! আপনার পছন্দের পণ্যটি বুক করতে আপনার ১) নাম, ২) সম্পূর্ণ ডেলিভারি ঠিকানা (জেলা সহ) লিখে পাঠিয়ে দিন।"
-   - কাস্টমার যখন পণ্যের নাম এবং তার ঠিকানা দেবে, তখন উত্তরের শেষে এই গোপন কোডটি বসিয়ে দেবে:
-   [[ORDER:{"product_id":ID,"product_name":"পণ্যের নাম","price":দাম,"qty":১,"name":"গ্রাহকের নাম","phone":"${cleanUserPhone}","address":"গ্রাহকের ঠিকানা"}]]
+১. মানুষের মতো অনুভূতি: মিষ্টি ও ভদ্র ভাষায় কথা বলবে। কাস্টমারকে "ভাইয়া" সম্বোধন করবে। কখনো বলবে না তুমি এআই বা বট। ভুল হলে সুন্দর করে ক্ষমা চাইবে ("দুঃখিত ভাইয়া, বুঝতে ভুল হয়েছিল...")।
+২. প্রোডাক্ট ও দাম: কাস্টমার যা খুঁজবে, নিচের তালিকা দেখে নাম, সঠিক দাম ও লিংক দেবে।
+৩. সরাসরি WhatsApp অর্ডার নেওয়া:
+   - কাস্টমার যদি পণ্য অর্ডার করতে চায় কিন্তু নাম-ঠিকানা দেয়নি, বলবে: "জি ভাইয়া! আপনার পছন্দের পণ্যটি কনফার্ম করতে আপনার ১) নাম ও ২) সম্পূর্ণ ডেলিভারি ঠিকানা (জেলা সহ) লিখে পাঠিয়ে দিন।"
+   - নাম-ঠিকানা দিলে উত্তরের শেষে এই কোডটি দেবে:
+   [[ORDER:{"product_id":ID,"product_name":"নাম","price":দাম,"qty":১,"name":"গ্রাহকের নাম","phone":"${cleanUserPhone}","address":"গ্রাহকের ঠিকানা"}]]
 
 ক্যাটালগ:
 ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
@@ -198,26 +207,41 @@ ${compactCatalogText || 'পণ্য লোড হচ্ছে...'}
   }
 }
 
-// ৬. WhatsApp Baileys ইঞ্জিন (হ্যাং হওয়া বন্ধ করার ১০০% সমাধান)
+// ৬. WhatsApp Baileys ইঞ্জিন (অফিসিয়াল লেটেস্ট ভার্সন ও ডেক্সটপ সিগনেচার ফিক্স)
 async function initWhatsApp() {
   await restoreFullSession();
 
   const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
+  // 🚀 লেটেস্ট প্রোটোকল ভার্সন লোড করা
+  let waVersion = [2, 3000, 1015901307];
+  try {
+    const v = await fetchLatestBaileysVersion();
+    if (v && v.version) waVersion = v.version;
+  } catch (e) {}
+
   sock = makeWASocket({
+    version: waVersion,
     logger: pino({ level: 'silent' }),
     auth: state,
     printQRInTerminal: false,
-    browser: ['Ubuntu', 'Chrome', '20.0.04'], // অফিসিয়াল ক্রোম ফিঙ্গারপ্রিন্ট
-    syncFullHistory: false,                   // 🚀 পুরনো চ্যাট ডাউনলোড বন্ধ (জিরো ল্যাগ)
+    browser: Browsers.windows('Desktop'), // 💻 ডিভাইস নেম: Windows Desktop Chrome
+    syncFullHistory: false,               // ⚡ নো-হ্যাং ফিক্স
     markOnlineOnConnect: false,
+    defaultQueryTimeoutMs: undefined,
     connectTimeoutMs: 60000,
-    defaultQueryTimeoutMs: 60000,
     keepAliveIntervalMs: 25000
   });
 
   sock.ev.on('connection.update', (update) => {
-    const { connection, lastDisconnect } = update;
+    const { connection, lastDisconnect, qr } = update;
+
+    // কিউআর কোড আসলে ওয়েব পেজে ছবি বানানো
+    if (qr) {
+      QRCode.toDataURL(qr, (err, url) => {
+        if (!err) qrCodeData = url;
+      });
+    }
 
     if (connection === 'close') {
       isConnected = false;
@@ -231,6 +255,7 @@ async function initWhatsApp() {
     } else if (connection === 'open') {
       isConnected = true;
       pairingCode = null;
+      qrCodeData = null;
       console.log('🎉 [TechXZone WhatsApp Bot] সফলভাবে কানেক্টেড আছে!');
       scheduleSessionBackup();
     }
@@ -281,7 +306,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
   }, 4 * 60 * 1000);
 }
 
-// ৮. ড্যাশবোর্ড
+// ৮. উন্নত ড্যাশবোর্ড (Pairing Code + Live QR Code)
 app.get('/', (req, res) => {
   const cleanCodeNoDash = pairingCode ? pairingCode.replace(/[^A-Za-z0-9]/g, '') : '';
 
@@ -291,7 +316,7 @@ app.get('/', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>TechXZone WhatsApp Pairing Manager</title>
+      <title>TechXZone WhatsApp Link Manager</title>
       <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f1f5f9; color: #0f172a; padding: 15px; margin: 0; }
         .card { max-width: 440px; margin: 20px auto; background: #fff; border-radius: 24px; padding: 22px; box-shadow: 0 10px 25px rgba(0,0,0,0.07); border: 1px solid #e2e8f0; }
@@ -299,10 +324,11 @@ app.get('/', (req, res) => {
         input[type="text"]:focus { border-color: #059669; }
         .btn { width: 100%; border: none; padding: 13px; border-radius: 14px; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
         .btn-green { background: #059669; color: #fff; }
+        .btn-green:hover { background: #047857; }
         .btn-copy { background: #0284c7; color: #fff; font-size: 15px; }
         .btn-gray { background: #e2e8f0; color: #334155; }
         .btn-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-size: 12px; padding: 9px; }
-        .code-box { background: #ecfdf5; border: 2px dashed #059669; border-radius: 18px; padding: 18px; text-align: center; margin: 15px 0; }
+        .code-box { background: #ecfdf5; border: 2px dashed #059669; border-radius: 18px; padding: 16px; text-align: center; margin: 12px 0; }
         .code-text { font-size: 34px; font-weight: 900; letter-spacing: 5px; color: #047857; font-family: monospace; }
       </style>
       <script>
@@ -325,12 +351,12 @@ app.get('/', (req, res) => {
     <body>
       <div class="card">
         <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp Bot</h2>
-        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 18px;">Ultra-Fast Link Engine</p>
+        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 16px;">Windows Desktop Signature Linked</p>
 
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
               <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
-              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট কাস্টমারদের উত্তর দিচ্ছে ও স্বয়ংক্রিয় অর্ডার নিচ্ছে।</p>
+              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট সক্রিয়ভাবে চ্যাট করছে ও স্বয়ংক্রিয় অর্ডার নিচ্ছে।</p>
               <form action="/hard-reset" method="POST">
                 <button type="submit" class="btn btn-danger">লগআউট / ডিসকানেক্ট করুন</button>
               </form>
@@ -345,8 +371,8 @@ app.get('/', (req, res) => {
 
                   <button type="button" id="copyBtn" onclick="copyCodeToClipboard()" class="btn btn-copy">📋 কোডটি কপি করুন (Copy)</button>
 
-                  <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:14px;font-size:11px;color:#475569;margin-top:12px;line-height:1.5;">
-                    👉 <b>WhatsApp</b> খুলুন ➡️ <b>Linked Devices</b> ➡️ <b>Link a Device</b> ➡️ <b>"Link with phone number instead"</b> এ গিয়ে কোডটি পেস্ট করুন।
+                  <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:14px;font-size:11px;color:#475569;margin-top:10px;line-height:1.5;">
+                    👉 <b>WhatsApp</b> ➡️ <b>Linked Devices</b> ➡️ <b>Link a Device</b> ➡️ <b>"Link with phone number instead"</b> এ গিয়ে পেস্ট করুন।
                   </div>
 
                   <div style="display:flex;gap:8px;margin-top:10px;">
@@ -358,21 +384,33 @@ app.get('/', (req, res) => {
                     </form>
                   </div>
 
-                  <div style="margin-top:16px;border-top:1px solid #e2e8f0;padding-top:12px;">
+                  <div style="margin-top:14px;border-top:1px solid #e2e8f0;padding-top:10px;">
                     <form action="/hard-reset" method="POST">
-                      <button type="submit" class="btn btn-danger" style="margin-top:0;">⚠️ WhatsApp-এ "Logging in..." আটকে থাকলে চাপুন (Hard Reset)</button>
+                      <button type="submit" class="btn btn-danger" style="margin-top:0;">🧹 পুরাতন আটকে থাকা সেশন ক্লিয়ার করুন</button>
                     </form>
                   </div>
                  </div>`
-              : `<form action="/get-code" method="POST">
-                  <label style="font-size:13px;font-weight:bold;color:#334155;">WhatsApp নম্বর দিন (যেটিতে বট চলবে):</label>
-                  <input type="text" name="phone" placeholder="যেমন: 01771049068" required autofocus />
-                  <button type="submit" class="btn btn-green">📲 কোড নিন (Get Pairing Code)</button>
-                 </form>
-                 <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:12px;">
-                   <form action="/hard-reset" method="POST">
-                     <button type="submit" class="btn btn-danger" style="margin-top:0;">🧹 পুরাতন আটকে থাকা সেশন ক্লিয়ার করুন</button>
-                   </form>
+              : `<div>
+                  <form action="/get-code" method="POST">
+                    <label style="font-size:13px;font-weight:bold;color:#334155;">WhatsApp নম্বর দিয়ে কোড নিন:</label>
+                    <input type="text" name="phone" placeholder="যেমন: 01771049068" required autofocus />
+                    <button type="submit" class="btn btn-green">📲 কোড নিন (Pairing Code)</button>
+                  </form>
+
+                  ${qrCodeData ? `
+                    <div style="text-align:center;margin-top:20px;border-top:1px solid #e2e8f0;padding-top:15px;">
+                      <span style="font-size:12px;font-weight:bold;color:#64748b;">অথবা সরাসরি QR কোড স্ক্যান করুন:</span>
+                      <div style="margin-top:10px;">
+                        <img src="${qrCodeData}" style="width:190px;height:190px;border:3px solid #059669;border-radius:14px;" />
+                      </div>
+                    </div>
+                  ` : ''}
+
+                  <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:12px;">
+                    <form action="/hard-reset" method="POST">
+                      <button type="submit" class="btn btn-danger" style="margin-top:0;">🧹 পুরাতন আটকে থাকা সেশন ক্লিয়ার করুন</button>
+                    </form>
+                  </div>
                  </div>`
             )
         }
