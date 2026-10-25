@@ -19,6 +19,7 @@ let genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 let isConnected = false;
 let pairingCode = null;
+let lastEnteredPhone = "";
 let sock = null;
 let productCatalog = [];
 let compactCatalogText = "";
@@ -26,7 +27,7 @@ const conversationHistory = new Map();
 const userMessageBuffers = new Map();
 let backupTimer = null;
 
-// ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর (যাতে জীবনেও লগআউট না হয়)
+// ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
 async function restoreFullSession() {
   try {
     const res = await axios.get('https://techxzone.shop/api.php?action=get_settings&key=wa_full_session_bundle', { timeout: 10000 });
@@ -39,13 +40,10 @@ async function restoreFullSession() {
       console.log(`✅ [TechXZone] ডেটাবেজ থেকে মোট ${Object.keys(bundle).length}টি ফাইল সফলভাবে রিস্টোর হয়েছে!`);
       return true;
     }
-  } catch (e) {
-    console.log("ℹ️ কোনো পূর্ববর্তী সেশন পাওয়া যায়নি, নতুন কানেকশন হবে।");
-  }
+  } catch (e) {}
   return false;
 }
 
-// সবগুলো চাবি একসাথে বান্ডিল করে ডেটাবেজে পার্মানেন্ট সেভ
 function scheduleSessionBackup() {
   clearTimeout(backupTimer);
   backupTimer = setTimeout(async () => {
@@ -66,11 +64,9 @@ function scheduleSessionBackup() {
         key: 'wa_full_session_bundle',
         data: sessionBundle
       }, { timeout: 10000 });
-      console.log(`💾 [TechXZone] মোট ${files.length}টি ফাইলসহ সম্পূর্ণ সেশন ডেটাবেজে সফলভাবে ব্যাকআপ হয়েছে!`);
-    } catch (e) {
-      console.error("সেশন ব্যাকআপ এরর:", e.message);
-    }
-  }, 4000); // ৪ সেকেন্ড অপেক্ষা করে সব চাবি একসাথে সেভ
+      console.log(`💾 [TechXZone] মোট ${files.length}টি ফাইলসহ সেশন ডেটাবেজে পার্মানেন্ট সেভ হয়েছে!`);
+    } catch (e) {}
+  }, 3000);
 }
 
 // ৩. লাইভ প্রোডাক্ট ক্যাটালগ
@@ -224,13 +220,13 @@ async function initWhatsApp() {
       if (shouldReconnect) {
         initWhatsApp();
       } else {
-        console.log("ফোন থেকে লগআউট করা হয়েছে। নতুন করে পেয়ারিং করতে হবে।");
+        console.log("ফোন থেকে লগআউট করা হয়েছে।");
         try { fs.rmSync(SESSION_DIR, { recursive: true, force: true }); } catch (e) {}
       }
     } else if (connection === 'open') {
       isConnected = true;
       pairingCode = null;
-      console.log('🎉 [TechXZone WhatsApp Bot] সফলভাবে কানেক্টেড আছে!');
+      console.log('🎉 [TechXZone WhatsApp Bot] কানেক্টেড আছে!');
       scheduleSessionBackup();
     }
   });
@@ -273,72 +269,179 @@ async function initWhatsApp() {
   });
 }
 
-// ৭. সার্ভার ঘুমিয়ে পড়া বন্ধ রাখার অটো-পিংগার (Keep-Alive)
+// ৭. অটো পিংগার (Keep Alive)
 if (process.env.RENDER_EXTERNAL_URL) {
   setInterval(() => {
     axios.get(process.env.RENDER_EXTERNAL_URL).catch(() => {});
-  }, 4 * 60 * 1000); // প্রতি ৪ মিনিটে অটো পিং
+  }, 4 * 60 * 1000);
 }
 
-// ৮. ড্যাশবোর্ড
+// ৮. উন্নত ড্যাশবোর্ড (কপি বাটন + রিসেট + নম্বর পরিবর্তন)
 app.get('/', (req, res) => {
+  const cleanCodeNoDash = pairingCode ? pairingCode.replace(/[^A-Za-z0-9]/g, '') : '';
+
   res.send(`
     <!DOCTYPE html>
     <html lang="bn">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>TechXZone Permanent WhatsApp Bot</title>
+      <title>TechXZone WhatsApp Pairing Manager</title>
       <style>
-        body { font-family: sans-serif; background: #f8fafc; color: #1e293b; padding: 20px; }
-        .card { max-width: 480px; margin: 0 auto; background: #fff; border-radius: 24px; padding: 24px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); border: 1px solid #e2e8f0; }
-        input[type="text"] { width: 100%; box-sizing: border-box; padding: 12px; border-radius: 12px; border: 1.5px solid #cbd5e1; font-size: 15px; margin-top: 6px; outline: none; }
-        button { width: 100%; background: #059669; color: #fff; border: none; padding: 12px; border-radius: 12px; font-weight: bold; font-size: 15px; cursor: pointer; margin-top: 10px; }
-        .code-box { background: #ecfdf5; border: 2px dashed #059669; border-radius: 16px; padding: 18px; text-align: center; margin: 15px 0; }
-        .code-text { font-size: 32px; font-weight: 900; letter-spacing: 5px; color: #047857; font-family: monospace; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f1f5f9; color: #0f172a; padding: 15px; margin: 0; }
+        .card { max-width: 440px; margin: 20px auto; background: #fff; border-radius: 24px; padding: 22px; box-shadow: 0 10px 25px rgba(0,0,0,0.07); border: 1px solid #e2e8f0; }
+        input[type="text"] { width: 100%; box-sizing: border-box; padding: 12px 14px; border-radius: 14px; border: 1.5px solid #cbd5e1; font-size: 15px; margin-top: 8px; outline: none; }
+        input[type="text"]:focus { border-color: #059669; }
+        .btn { width: 100%; border: none; padding: 13px; border-radius: 14px; font-weight: bold; font-size: 14px; cursor: pointer; margin-top: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.2s; }
+        .btn-green { background: #059669; color: #fff; }
+        .btn-green:hover { background: #047857; }
+        .btn-copy { background: #0284c7; color: #fff; font-size: 15px; }
+        .btn-copy:hover { background: #0369a1; }
+        .btn-gray { background: #e2e8f0; color: #334155; }
+        .btn-gray:hover { background: #cbd5e1; }
+        .btn-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-size: 12px; padding: 9px; }
+        .btn-danger:hover { background: #fecaca; }
+        .code-box { background: #ecfdf5; border: 2px dashed #059669; border-radius: 18px; padding: 18px; text-align: center; margin: 15px 0; }
+        .code-text { font-size: 34px; font-weight: 900; letter-spacing: 5px; color: #047857; font-family: monospace; }
       </style>
+      <script>
+        function copyCodeToClipboard() {
+          const code = "${cleanCodeNoDash}";
+          navigator.clipboard.writeText(code).then(() => {
+            const btn = document.getElementById('copyBtn');
+            btn.innerHTML = "✅ কপি হয়েছে!";
+            btn.style.background = "#10b981";
+            setTimeout(() => {
+              btn.innerHTML = "📋 কোডটি কপি করুন (Copy)";
+              btn.style.background = "#0284c7";
+            }, 2500);
+          }).catch(() => {
+            prompt("কোডটি কপি করে নিন:", code);
+          });
+        }
+      </script>
     </head>
     <body>
       <div class="card">
-        <h2 style="margin:0 0 6px;text-align:center;">TechXZone WhatsApp Bot</h2>
-        <p style="text-align:center;color:#64748b;font-size:13px;margin:0 0 20px;">Permanent Database Sync Active</p>
+        <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp Bot</h2>
+        <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 18px;">Pairing & Control Dashboard</p>
 
-        <div style="background:#f1f5f9;padding:18px;border-radius:18px;margin-bottom:20px;text-align:center;">
-          ${isConnected 
-            ? `<div style="color:#059669;font-weight:bold;font-size:18px;">✅ WhatsApp লাইভ ও ডাটাবেজে স্থায়ী সেভ আছে!</div>
-               <p style="margin:6px 0 0;font-size:12px;color:#64748b;">সার্ভার রিস্টার্ট হলেও এটি আর কখনোই লগআউট হবে না।</p>`
-            : (pairingCode 
-                ? `<div class="code-box">
-                    <p style="margin:0 0 8px;font-size:13px;color:#065f46;font-weight:bold;">Pairing Code:</p>
+        ${isConnected 
+          ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
+              <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
+              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট মেসেজের উত্তর দিচ্ছে ও ডাটাবেজে স্থায়ী সেভ আছে।</p>
+              <form action="/hard-reset" method="POST">
+                <button type="submit" class="btn btn-danger">লগআউট / ডিসকানেক্ট করুন</button>
+              </form>
+             </div>`
+          : (pairingCode 
+              ? `<div>
+                  <div class="code-box">
+                    <span style="font-size:12px;color:#065f46;font-weight:bold;">আপনার Pairing Code:</span>
                     <div class="code-text">${pairingCode}</div>
-                   </div>`
-                : `<form action="/get-code" method="POST">
-                    <input type="text" name="phone" placeholder="WhatsApp নম্বর দিন (017...)" required />
-                    <button type="submit">📲 Get Pairing Code</button>
-                   </form>`
-              )
-          }
-        </div>
+                    <span style="font-size:11px;color:#64748b;">নম্বর: <b>${lastEnteredPhone}</b></span>
+                  </div>
+
+                  <button type="button" id="copyBtn" onclick="copyCodeToClipboard()" class="btn btn-copy">📋 কোডটি কপি করুন (Copy)</button>
+
+                  <div style="background:#f8fafc;border:1px solid #e2e8f0;padding:12px;border-radius:14px;font-size:11px;color:#475569;margin-top:12px;line-height:1.5;">
+                    👉 <b>WhatsApp</b> খুলুন ➡️ <b>Linked Devices</b> ➡️ <b>Link with phone number instead</b> ➡️ কোডটি পেস্ট করুন।
+                  </div>
+
+                  <div style="display:flex;gap:8px;margin-top:10px;">
+                    <form action="/resend-code" method="POST" style="flex:1;">
+                      <button type="submit" class="btn btn-gray" style="margin-top:0;">🔄 আবার পাঠান</button>
+                    </form>
+                    <form action="/change-number" method="POST" style="flex:1;">
+                      <button type="submit" class="btn btn-gray" style="margin-top:0;">✏️ নম্বর পরিবর্তন</button>
+                    </form>
+                  </div>
+
+                  <div style="margin-top:16px;border-top:1px solid #e2e8f0;padding-top:12px;">
+                    <form action="/hard-reset" method="POST">
+                      <button type="submit" class="btn btn-danger" style="margin-top:0;">⚠️ WhatsApp-এ "Logging in..." আটকে থাকলে চাপুন (Hard Reset)</button>
+                    </form>
+                  </div>
+                 </div>`
+              : `<form action="/get-code" method="POST">
+                  <label style="font-size:13px;font-weight:bold;color:#334155;">WhatsApp নম্বর দিন (যেটিতে বট চলবে):</label>
+                  <input type="text" name="phone" placeholder="যেমন: 01771049068" required autofocus />
+                  <button type="submit" class="btn btn-green">📲 কোড নিন (Get Pairing Code)</button>
+                 </form>
+                 <div style="margin-top:18px;border-top:1px solid #e2e8f0;padding-top:12px;">
+                   <form action="/hard-reset" method="POST">
+                     <button type="submit" class="btn btn-danger" style="margin-top:0;">🧹 পুরাতন আটকে থাকা সেশন ক্লিয়ার করুন</button>
+                   </form>
+                 </div>`
+            )
+        }
       </div>
     </body>
     </html>
   `);
 });
 
-// ৯. পেয়ারিং কোড রিকোয়েস্ট
+// ৯. পেয়ারিং কোড জেনারেট
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
   if (phone.length === 11 && phone.startsWith('01')) phone = '88' + phone;
 
+  lastEnteredPhone = phone;
+
   try {
     if (sock && !sock.authState.creds.registered) {
-      await delay(2000);
+      await delay(1500);
       const code = await sock.requestPairingCode(phone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
-      setTimeout(() => { pairingCode = null; }, 120000);
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error("[Pairing Error]:", err.message);
+  }
+  res.redirect('/');
+});
+
+// ১০. কোড রি-সেন্ড
+app.post('/resend-code', async (req, res) => {
+  if (lastEnteredPhone && sock && !sock.authState.creds.registered) {
+    try {
+      const code = await sock.requestPairingCode(lastEnteredPhone);
+      pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
+    } catch (e) {}
+  }
+  res.redirect('/');
+});
+
+// ১১. নম্বর পরিবর্তন
+app.post('/change-number', (req, res) => {
+  pairingCode = null;
+  res.redirect('/');
+});
+
+// ১২. হার্ড রিসেট (আটকে থাকা সেশন এক ক্লিকে পরিষ্কার)
+app.post('/hard-reset', async (req, res) => {
+  pairingCode = null;
+  lastEnteredPhone = "";
+  isConnected = false;
+
+  try {
+    if (fs.existsSync(SESSION_DIR)) {
+      fs.rmSync(SESSION_DIR, { recursive: true, force: true });
+    }
+  } catch (e) {}
+
+  try {
+    await axios.post('https://techxzone.shop/api.php?action=save_settings', {
+      key: 'wa_full_session_bundle',
+      data: {}
+    }, { timeout: 5000 });
+  } catch (e) {}
+
+  if (sock) {
+    try { sock.end(undefined); } catch (e) {}
+  }
+
+  await initWhatsApp();
   res.redirect('/');
 });
 
