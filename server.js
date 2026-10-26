@@ -194,7 +194,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-3.8-flash সেট করা)
+// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-2.5-flash ও 503 সুরক্ষা)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
@@ -243,49 +243,51 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // 🚀 গুগলের নির্দেশিত অ্যাক্টিভ মডেল
-  const modelName = "gemini-3.8-flash";
+  // 🚀 আপনার চাহিদা অনুযায়ী প্রধান মডেল gemini-2.5-flash এবং 503 সুরক্ষার জন্য ব্যাকআপ
+  const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      systemInstruction: systemInstruction,
-      generationConfig: {
-        maxOutputTokens: 300,
-        temperature: 0.3
-      }
-    });
-
-    const timeoutPromise = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error("Timeout")), 20000)
-    );
-
-    const generatePromise = model.generateContent(userMessage);
-    const result = await Promise.race([generatePromise, timeoutPromise]);
-    let replyText = result.response.text();
-
-    // অর্ডার প্লেসমেন্ট
-    const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
-    if (orderMatch && orderMatch[1]) {
-      try {
-        const orderData = JSON.parse(orderMatch[1]);
-        if (!orderData.phone || orderData.phone.length < 10) orderData.phone = cleanUserPhone;
-
-        const orderResult = await createWebsiteOrder(orderData);
-        if (orderResult.success) {
-          const invoiceNote = `\n\n🎉 *আলহামদুলিল্লাহ ভাইয়া! আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে।* \n🆔 *অর্ডার আইডি:* #${orderResult.orderId}\n📦 *পণ্য:* ${orderData.product_name}\n💰 *সর্বমোট বিল:* ৳${orderResult.grandTotal.toLocaleString()} (ক্যাশ অন ডেলিভারি)\n🚚 পার্সেল পৌঁছে দিলে দেখে মূল্য পরিশোধ করবেন। ধন্যবাদ TechXZone এর সাথে থাকার জন্য! ❤️`;
-          replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '') + invoiceNote;
+  for (const modelName of modelsToTry) {
+    try {
+      const model = genAI.getGenerativeModel({
+        model: modelName,
+        systemInstruction: systemInstruction,
+        generationConfig: {
+          maxOutputTokens: 300,
+          temperature: 0.3
         }
-      } catch (err) {
-        replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '');
+      });
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 15000)
+      );
+
+      const generatePromise = model.generateContent(userMessage);
+      const result = await Promise.race([generatePromise, timeoutPromise]);
+      let replyText = result.response.text();
+
+      // অর্ডার প্লেসমেন্ট
+      const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
+      if (orderMatch && orderMatch[1]) {
+        try {
+          const orderData = JSON.parse(orderMatch[1]);
+          if (!orderData.phone || orderData.phone.length < 10) orderData.phone = cleanUserPhone;
+
+          const orderResult = await createWebsiteOrder(orderData);
+          if (orderResult.success) {
+            const invoiceNote = `\n\n🎉 *আলহামদুলিল্লাহ ভাইয়া! আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে।* \n🆔 *অর্ডার আইডি:* #${orderResult.orderId}\n📦 *পণ্য:* ${orderData.product_name}\n💰 *সর্বমোট বিল:* ৳${orderResult.grandTotal.toLocaleString()} (ক্যাশ অন ডেলিভারি)\n🚚 পার্সেল পৌঁছে দিলে দেখে মূল্য পরিশোধ করবেন। ধন্যবাদ TechXZone এর সাথে থাকার জন্য! ❤️`;
+            replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '') + invoiceNote;
+          }
+        } catch (err) {
+          replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '');
+        }
       }
+
+      replyText = replyText.replace(/\*\*/g, '*');
+      return replyText;
+
+    } catch (err) {
+      console.error(`[AI Error - ${modelName}]:`, err.message);
     }
-
-    replyText = replyText.replace(/\*\*/g, '*');
-    return replyText;
-
-  } catch (err) {
-    console.error(`[AI Error - ${modelName}]:`, err.message);
   }
 
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
