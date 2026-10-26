@@ -4,8 +4,7 @@ const axios = require('axios');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
-// 🚀 গুগলের নতুন অফিশিয়াল GenAI SDK
-const { GoogleGenAI } = require('@google/genai');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
@@ -23,9 +22,9 @@ const CATALOG_CACHE_FILE = path.join(__dirname, 'catalog_cache.json');
 // অ্যাডমিনের WhatsApp নম্বর
 const ADMIN_PHONE = process.env.ADMIN_PHONE || "8801404277094"; 
 
-// ১. নতুন Google GenAI ক্লায়েন্ট ইনিশিয়ালাইজেশন
+// ১. Gemini API Key
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+let genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
 
 let isConnected = false;
 let pairingCode = null;
@@ -195,9 +194,9 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (নতুন @google/genai SDK দিয়ে তৈরি)
+// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-3.6-flash দিয়ে সরাসরি)
 async function generateAiReply(userPhone, userMessage) {
-  if (!ai || !GEMINI_API_KEY) {
+  if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
@@ -244,28 +243,27 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // 🚀 নতুন GenAI SDK মডেল তালিকা
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3.6-flash"];
+  // 🚀 সরাসরি সক্রিয় অফিশিয়াল মডেল
+  const modelsToTry = ["gemini-3.6-flash", "gemini-3.5-flash-lite"];
 
   for (const modelName of modelsToTry) {
     try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 15000)
-      );
-
-      // নতুন @google/genai সিনট্যাক্স
-      const generatePromise = ai.models.generateContent({
+      const model = genAI.getGenerativeModel({
         model: modelName,
-        contents: userMessage,
-        config: {
-          systemInstruction: systemInstruction,
-          maxOutputTokens: 350,
+        systemInstruction: systemInstruction,
+        generationConfig: {
+          maxOutputTokens: 300,
           temperature: 0.3
         }
       });
 
-      const response = await Promise.race([generatePromise, timeoutPromise]);
-      let replyText = response.text;
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 15000)
+      );
+
+      const generatePromise = model.generateContent(userMessage);
+      const result = await Promise.race([generatePromise, timeoutPromise]);
+      let replyText = result.response.text();
 
       // অর্ডার প্লেসমেন্ট
       const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
@@ -487,7 +485,7 @@ app.get('/', (req, res) => {
 
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
-              <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
+              <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp🙂 সফলভাবে লাইভ আছে!</div>
               <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট বিদ্যুৎগতিতে কাস্টমারদের উত্তর দিচ্ছে।</p>
               
               <form action="/refresh-catalog" method="POST" style="margin-bottom:8px;">
