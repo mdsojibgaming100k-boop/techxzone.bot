@@ -184,7 +184,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. আপগ্রেডেড মানবিক এআই ইঞ্জিন (হুবহু আপনার আগের কনফিগারেশন)
+// ৬. আপগ্রেডেড মানবিক এআই ইঞ্জিন (স্মার্ট সেলসম্যান ব্রেন)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
@@ -241,7 +241,6 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // আপনার দেওয়া মডেল তালিকা হুবহু রাখা হলো
   const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
 
   const storedEntry = conversationHistory.get(userPhone);
@@ -305,7 +304,7 @@ ${relevantCatalog}
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৭. WhatsApp Baileys ইঞ্জিন
+// ৭. WhatsApp Baileys ইঞ্জিন (ফর্ম ও সাধারণ মেসেজ সঠিকভাবে পাঠানো)
 async function initWhatsApp(forceClean = false) {
   try {
     if (sock) {
@@ -316,6 +315,7 @@ async function initWhatsApp(forceClean = false) {
       sock = null;
     }
 
+    // যদি নতুন করে পেয়ারিং করা হয়, তাহলে আগের জমে থাকা ক্যাশ মুছে ফ্রেশ শুরু করা
     if (forceClean) {
       try {
         if (fs.existsSync(SESSION_DIR)) {
@@ -401,8 +401,9 @@ async function initWhatsApp(forceClean = false) {
         } catch (e) {}
 
         let aiReply = await generateAiReply(sender, text);
-        aiReply = aiReply.replace(/\*\*/g, '*');
+        aiReply = aiReply.replace(/\*\*/g, '*'); // নিশ্চিতভাবে ডাবল স্টার দূর করা
 
+        // 🚀 ফর্ম আলাদা এবং টেক্সট আলাদা মেসেজে পাঠানোর নিখুঁত সিস্টেম
         const formRegex = /(📋\s*\*?ক্যাশ অন ডেলিভারি অর্ডার ফর্ম\*?[\s\S]*?━━━━━━━━━━━━━━━━━━━━)/;
         const match = aiReply.match(formRegex);
 
@@ -413,13 +414,16 @@ async function initWhatsApp(forceClean = false) {
             .replace(/\[\[ORDER:(.*?)\]\]/g, '')
             .trim();
 
+          // ১ম মেসেজ: শুধু বোল্ড করা ফাঁকা ফর্ম (সহজে কপি করার জন্য)
           await sock.sendMessage(sender, { text: formText });
 
+          // ২য় মেসেজ: বাকি গাইডলাইন ও টিপস
           if (otherText) {
             await delay(1000);
             await sock.sendMessage(sender, { text: otherText });
           }
         } else {
+          // সাধারণ কথা হলে স্বাভাবিকভাবে এক মেসেজে যাবে
           await sock.sendMessage(sender, { text: aiReply });
         }
         
@@ -442,7 +446,7 @@ if (process.env.RENDER_EXTERNAL_URL) {
   }, 4 * 60 * 1000);
 }
 
-// ৯. ড্যাশবোর্ড UI
+// ৯. ড্যাশবোর্ড
 app.get('/', (req, res) => {
   const cleanCodeNoDash = pairingCode ? pairingCode.replace(/[^A-Za-z0-9]/g, '') : '';
 
@@ -462,11 +466,10 @@ app.get('/', (req, res) => {
         .btn-blue { background: #2563eb; color: #fff; }
         .btn-copy { background: #0284c7; color: #fff; }
         .btn-gray { background: #e2e8f0; color: #334155; }
-        .btn-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-size: 13px; }
+        .btn-danger { background: #fee2e2; color: #b91c1c; border: 1px solid #fca5a5; font-size: 12px; }
         .code-box { background: #ecfdf5; border: 2px dashed #059669; border-radius: 18px; padding: 16px; text-align: center; margin: 12px 0; }
         .code-text { font-size: 34px; font-weight: 900; letter-spacing: 5px; color: #047857; font-family: monospace; }
         .badge { display: inline-block; background: #e0f2fe; color: #0369a1; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: bold; margin-bottom: 12px; }
-        .error-box { background:#fef2f2; border:1px solid #fca5a5; color:#991b1b; padding:12px; border-radius:14px; font-size:13px; margin: 12px 0; text-align:center; font-weight:500; }
       </style>
       <script>
         function copyCodeToClipboard() {
@@ -487,17 +490,20 @@ app.get('/', (req, res) => {
       <div class="card">
         <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp Bot</h2>
         <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 10px;">Real-Time Fast Speed & Live Typing</p>
-        
         <div style="text-align:center;">
           <span class="badge">📦 মোট প্রোডাক্ট সিঙ্ক: ${productCatalog.length} টি</span>
         </div>
 
-        ${pairingErrorMessage ? `<div class="error-box">${pairingErrorMessage}</div>` : ''}
+        ${pairingErrorMessage ? `
+          <div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px;border-radius:12px;font-size:12px;margin:10px 0;text-align:center;">
+            ${pairingErrorMessage}
+          </div>
+        ` : ''}
 
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
               <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
-              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট বিদ্যুৎগতিতে কাস্টমারদের উত্তর দিচ্ছে।</p>
+              <p style="margin:8px 0 15px;font-size:13px;color:#475569;">বট বিদ্যুৎগতিতে লাইভ টাইপিং দিয়ে উত্তর দিচ্ছে।</p>
               
               <form action="/refresh-catalog" method="POST" style="margin-bottom:8px;">
                 <button type="submit" class="btn btn-blue">🔄 ক্যাটালগ রিফ্রেশ করুন</button>
@@ -518,7 +524,10 @@ app.get('/', (req, res) => {
                   <button type="button" id="copyBtn" onclick="copyCodeToClipboard()" class="btn btn-copy">📋 কোডটি কপি করুন (Copy)</button>
 
                   <div style="display:flex;gap:8px;margin-top:10px;">
-                    <form action="/hard-reset" method="POST" style="flex:1;">
+                    <form action="/resend-code" method="POST" style="flex:1;">
+                      <button type="submit" class="btn btn-gray" style="margin-top:0;">🔄 আবার পাঠান</button>
+                    </form>
+                    <form action="/change-number" method="POST" style="flex:1;">
                       <button type="submit" class="btn btn-gray" style="margin-top:0;">✏️ নম্বর পরিবর্তন</button>
                     </form>
                   </div>
@@ -529,9 +538,9 @@ app.get('/', (req, res) => {
                     <input type="text" name="phone" placeholder="যেমন: 01404277094" required autofocus />
                     <button type="submit" class="btn btn-green">📲 কোড নিন (Pairing Code)</button>
                   </form>
-                  
+
                   <form action="/hard-reset" method="POST" style="margin-top:10px;">
-                    <button type="submit" class="btn btn-danger">🗑️ সব সেশন ক্লিয়ার / ফ্রেশ রিসেট</button>
+                    <button type="submit" class="btn btn-danger">🗑️ সেশন ক্লিয়ার / ফ্রেশ রিসেট</button>
                   </form>
                  </div>`
             )
@@ -542,7 +551,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ১০. পেয়ারিং কোড রিকোয়েস্ট (স্থায়ী অটো-ক্লিন ফিক্স)
+// ১০. পেয়ারিং কোড রিকোয়েস্ট (সমস্যার স্থায়ী সমাধান)
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
@@ -553,20 +562,39 @@ app.post('/get-code', async (req, res) => {
   pairingCode = null;
 
   try {
+    // আগের কোনো ক্র্যাশ করা বা স্টাক সেশন থাকলে ক্লিন করে ফ্রেশ সকেট প্রস্তুত করা
     await initWhatsApp(true);
-    await delay(3500);
+    await delay(3500); // সকেট ও কানেকশন ওপেন হতে Baileys-এর জন্য পর্যাপ্ত সময়
 
     if (sock) {
       const code = await sock.requestPairingCode(phone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
     } else {
-      pairingErrorMessage = "WhatsApp সকেট শুরু হতে পারেনি। পেজটি রিফ্রেশ করুন।";
+      pairingErrorMessage = "WhatsApp সার্ভার শুরু হতে পারেনি। আবার চেষ্টা করুন।";
     }
   } catch (err) {
-    console.error("❌ Pairing Error:", err.message);
-    pairingErrorMessage = `কোড আনা যায়নি: ${err.message}। আবার চেষ্টা করুন।`;
+    console.error("Pairing Error:", err.message);
+    pairingErrorMessage = `কোড তৈরি হতে সমস্যা হয়েছে: ${err.message}`;
   }
+  res.redirect('/');
+});
 
+// ১১. কোড রি-সেন্ড
+app.post('/resend-code', async (req, res) => {
+  if (lastEnteredPhone && sock) {
+    try {
+      const code = await sock.requestPairingCode(lastEnteredPhone);
+      pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
+    } catch (e) {
+      pairingErrorMessage = "কোড পুনরায় পাঠাতে সমস্যা হয়েছে।";
+    }
+  }
+  res.redirect('/');
+});
+
+// ১২. নম্বর পরিবর্তন
+app.post('/change-number', (req, res) => {
+  pairingCode = null;
   res.redirect('/');
 });
 
