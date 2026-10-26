@@ -305,33 +305,16 @@ ${relevantCatalog}
 }
 
 // ৭. WhatsApp Baileys ইঞ্জিন (ফর্ম ও সাধারণ মেসেজ সঠিকভাবে পাঠানো)
-async function initWhatsApp(forceClean = false) {
+async function initWhatsApp() {
   try {
     if (sock) {
       try {
         sock.ev.removeAllListeners();
         sock.end(undefined); 
       } catch (e) {}
-      sock = null;
     }
 
-    // যদি নতুন করে পেয়ারিং করা হয়, তাহলে আগের জমে থাকা ক্যাশ মুছে ফ্রেশ শুরু করা
-    if (forceClean) {
-      try {
-        if (fs.existsSync(SESSION_DIR)) {
-          await fsPromises.rm(SESSION_DIR, { recursive: true, force: true });
-        }
-      } catch (e) {}
-
-      try {
-        await axios.post('https://techxzone.shop/api.php?action=save_settings', {
-          key: 'wa_full_session_bundle',
-          data: {}
-        }, { timeout: 5000 });
-      } catch (e) {}
-    } else {
-      await restoreFullSession();
-    }
+    await restoreFullSession();
 
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
@@ -357,7 +340,7 @@ async function initWhatsApp(forceClean = false) {
         isConnected = false;
         const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
         if (shouldReconnect) {
-          setTimeout(() => initWhatsApp(false), 3000);
+          setTimeout(initWhatsApp, 3000);
         } else {
           try { fs.rmSync(SESSION_DIR, { recursive: true, force: true }); } catch (e) {}
         }
@@ -494,12 +477,6 @@ app.get('/', (req, res) => {
           <span class="badge">📦 মোট প্রোডাক্ট সিঙ্ক: ${productCatalog.length} টি</span>
         </div>
 
-        ${pairingErrorMessage ? `
-          <div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px;border-radius:12px;font-size:12px;margin:10px 0;text-align:center;">
-            ${pairingErrorMessage}
-          </div>
-        ` : ''}
-
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
               <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
@@ -538,10 +515,6 @@ app.get('/', (req, res) => {
                     <input type="text" name="phone" placeholder="যেমন: 01404277094" required autofocus />
                     <button type="submit" class="btn btn-green">📲 কোড নিন (Pairing Code)</button>
                   </form>
-
-                  <form action="/hard-reset" method="POST" style="margin-top:10px;">
-                    <button type="submit" class="btn btn-danger">🗑️ সেশন ক্লিয়ার / ফ্রেশ রিসেট</button>
-                  </form>
                  </div>`
             )
         }
@@ -551,7 +524,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ১০. পেয়ারিং কোড রিকোয়েস্ট (সমস্যার স্থায়ী সমাধান)
+// ১০. পেয়ারিং কোড রিকোয়েস্ট
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
@@ -562,32 +535,27 @@ app.post('/get-code', async (req, res) => {
   pairingCode = null;
 
   try {
-    // আগের কোনো ক্র্যাশ করা বা স্টাক সেশন থাকলে ক্লিন করে ফ্রেশ সকেট প্রস্তুত করা
-    await initWhatsApp(true);
-    await delay(3500); // সকেট ও কানেকশন ওপেন হতে Baileys-এর জন্য পর্যাপ্ত সময়
+    if (!sock || !sock.ws) {
+      await initWhatsApp();
+      await delay(2000);
+    }
 
-    if (sock) {
+    if (sock && !sock.authState.creds.registered) {
+      await delay(1500);
       const code = await sock.requestPairingCode(phone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
-    } else {
-      pairingErrorMessage = "WhatsApp সার্ভার শুরু হতে পারেনি। আবার চেষ্টা করুন।";
     }
-  } catch (err) {
-    console.error("Pairing Error:", err.message);
-    pairingErrorMessage = `কোড তৈরি হতে সমস্যা হয়েছে: ${err.message}`;
-  }
+  } catch (err) {}
   res.redirect('/');
 });
 
 // ১১. কোড রি-সেন্ড
 app.post('/resend-code', async (req, res) => {
-  if (lastEnteredPhone && sock) {
+  if (lastEnteredPhone && sock && !sock.authState.creds.registered) {
     try {
       const code = await sock.requestPairingCode(lastEnteredPhone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
-    } catch (e) {
-      pairingErrorMessage = "কোড পুনরায় পাঠাতে সমস্যা হয়েছে।";
-    }
+    } catch (e) {}
   }
   res.redirect('/');
 });
@@ -609,9 +577,28 @@ app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   lastEnteredPhone = "";
   isConnected = false;
-  pairingErrorMessage = "";
 
-  await initWhatsApp(true);
+  try {
+    if (fs.existsSync(SESSION_DIR)) {
+      await fsPromises.rm(SESSION_DIR, { recursive: true, force: true });
+    }
+  } catch (e) {}
+
+  try {
+    await axios.post('https://techxzone.shop/api.php?action=save_settings', {
+      key: 'wa_full_session_bundle',
+      data: {}
+    }, { timeout: 5000 });
+  } catch (e) {}
+
+  if (sock) {
+    try { 
+      sock.ev.removeAllListeners();
+      sock.end(undefined); 
+    } catch (e) {}
+  }
+
+  setTimeout(initWhatsApp, 2000);
   res.redirect('/');
 });
 
@@ -646,5 +633,5 @@ app.options('/api/ai-chat', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  initWhatsApp(false);
+  initWhatsApp();
 });
