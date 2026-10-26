@@ -46,10 +46,9 @@ setInterval(() => {
   }
 }, 60 * 60 * 1000);
 
-// ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর (ওভাররাইট-প্রুফ)
+// ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
 async function restoreFullSession() {
   try {
-    // লোকাল ফাইলে সেশন কি থাকলে ডেটাবেজ থেকে ওভাররাইট করে নষ্ট করবে না
     if (fs.existsSync(SESSION_DIR)) {
       const existing = await fsPromises.readdir(SESSION_DIR);
       if (existing.includes('creds.json')) return true;
@@ -81,7 +80,6 @@ function scheduleSessionBackup() {
       const files = await fsPromises.readdir(SESSION_DIR);
       if (!files.includes('creds.json')) return;
 
-      // শুধুমাত্র জরুরি অথেনটিকেশন কি সেভ করা (যাতে PHP ব্যাকএন্ড সাইজ লিমিটে রিজেক্ট না করে)
       const essentialFiles = files.filter(f => 
         f === 'creds.json' || 
         f.startsWith('app-state-sync-key') || 
@@ -196,7 +194,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (হ্যাং-প্রুফ ও ৮ সেকেন্ড টাইমআউট লক)
+// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (হ্যাং-প্রুফ ও ২০ সেকেন্ড নিরাপদ টাইমআউট)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
@@ -245,58 +243,56 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // গুগলের অফিশিয়াল দ্রুততম ও সরাসরি সচল মডেল
-  const modelsToTry = ["gemini-flash-latest", "gemini-3.6-flash", "gemini-2.0-flash"];
+  // সরাসরি গুগলের দ্রুততম ও স্থিতিশীল মডেল
+  const modelName = "gemini-2.0-flash";
 
-  for (const modelName of modelsToTry) {
-    try {
-      const model = genAI.getGenerativeModel({
-        model: modelName,
-        systemInstruction: systemInstruction,
-        generationConfig: {
-          maxOutputTokens: 350,
-          temperature: 0.3
-        }
-      });
-
-      // ⏱️ সর্বোচ্চ ৮ সেকেন্ডের হার্ড টাইমআউট (কোনোভাবেই সার্ভার ২-৩ মিনিট ঝুলবে না)
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 8000)
-      );
-
-      const generatePromise = model.generateContent(userMessage);
-      const result = await Promise.race([generatePromise, timeoutPromise]);
-      let replyText = result.response.text();
-
-      // অর্ডার প্রসেস
-      const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
-      if (orderMatch && orderMatch[1]) {
-        try {
-          const orderData = JSON.parse(orderMatch[1]);
-          if (!orderData.phone || orderData.phone.length < 10) orderData.phone = cleanUserPhone;
-
-          const orderResult = await createWebsiteOrder(orderData);
-          if (orderResult.success) {
-            const invoiceNote = `\n\n🎉 *আলহামদুলিল্লাহ ভাইয়া! আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে।* \n🆔 *অর্ডার আইডি:* #${orderResult.orderId}\n📦 *পণ্য:* ${orderData.product_name}\n💰 *সর্বমোট বিল:* ৳${orderResult.grandTotal.toLocaleString()} (ক্যাশ অন ডেলিভারি)\n🚚 পার্সেল পৌঁছে দিলে দেখে মূল্য পরিশোধ করবেন। ধন্যবাদ TechXZone এর সাথে থাকার জন্য! ❤️`;
-            replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '') + invoiceNote;
-          }
-        } catch (err) {
-          replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '');
-        }
+  try {
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      systemInstruction: systemInstruction,
+      generationConfig: {
+        maxOutputTokens: 300,
+        temperature: 0.3
       }
+    });
 
-      replyText = replyText.replace(/\*\*/g, '*');
-      return replyText;
+    // ২০ সেকেন্ডের নিরাপদ টাইমআউট
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Timeout")), 20000)
+    );
 
-    } catch (err) {
-      console.error(`[AI Error - ${modelName}]:`, err.message);
+    const generatePromise = model.generateContent(userMessage);
+    const result = await Promise.race([generatePromise, timeoutPromise]);
+    let replyText = result.response.text();
+
+    // অর্ডার প্লেসমেন্ট
+    const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
+    if (orderMatch && orderMatch[1]) {
+      try {
+        const orderData = JSON.parse(orderMatch[1]);
+        if (!orderData.phone || orderData.phone.length < 10) orderData.phone = cleanUserPhone;
+
+        const orderResult = await createWebsiteOrder(orderData);
+        if (orderResult.success) {
+          const invoiceNote = `\n\n🎉 *আলহামদুলিল্লাহ ভাইয়া! আপনার অর্ডারটি সফলভাবে কনফার্ম করা হয়েছে।* \n🆔 *অর্ডার আইডি:* #${orderResult.orderId}\n📦 *পণ্য:* ${orderData.product_name}\n💰 *সর্বমোট বিল:* ৳${orderResult.grandTotal.toLocaleString()} (ক্যাশ অন ডেলিভারি)\n🚚 পার্সেল পৌঁছে দিলে দেখে মূল্য পরিশোধ করবেন। ধন্যবাদ TechXZone এর সাথে থাকার জন্য! ❤️`;
+          replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '') + invoiceNote;
+        }
+      } catch (err) {
+        replyText = replyText.replace(/\[\[ORDER:(.*?)\]\]/, '');
+      }
     }
+
+    replyText = replyText.replace(/\*\*/g, '*');
+    return replyText;
+
+  } catch (err) {
+    console.error(`[AI Error - ${modelName}]:`, err.message);
   }
 
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৭. WhatsApp Baileys ইঞ্জিন (অ্যান্টি-হ্যাং ও ফাস্ট হ্যান্ডশেক)
+// ৭. WhatsApp Baileys ইঞ্জিন
 async function initWhatsApp(forceClean = false) {
   try {
     if (sock) {
@@ -330,7 +326,7 @@ async function initWhatsApp(forceClean = false) {
       logger: pino({ level: 'silent' }),
       auth: state,
       printQRInTerminal: false,
-      browser: ['Mac OS', 'Chrome', '14.4.1'], // WhatsApp Web Companion-এর সবচেয়ে ট্রাস্টেড ব্রাউজার
+      browser: ['Mac OS', 'Chrome', '14.4.1'],
       connectTimeoutMs: 60000,
       defaultQueryTimeoutMs: 0,
       keepAliveIntervalMs: 15000,
@@ -373,7 +369,6 @@ async function initWhatsApp(forceClean = false) {
       scheduleSessionBackup();
     });
 
-    // ইনকামিং মেসেজ হ্যান্ডলার (টাইপিং স্ট্যাটাস হ্যাং হওয়া মুক্ত)
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
       try {
         if (type !== 'notify') return;
@@ -416,7 +411,7 @@ async function initWhatsApp(forceClean = false) {
             await sock.sendMessage(sender, { text: aiReply });
           }
         } finally {
-          // রিপ্লাই দেওয়া শেষ হলে বা কোনো কারণে ফেইল করলেও টাইপিং বন্ধ হবে
+          // রিপ্লাই পাঠানো শেষ হলে বা ফেইল হলেও টাইপিং অফ হবে
           sock.sendPresenceUpdate('paused', sender).catch(() => {});
         }
 
