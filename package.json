@@ -1,16 +1,18 @@
 {
-  "name": "techxzone-whatsapp-ai-bot",
+  "name": "techxzone-bot",
   "version": "1.0.0",
-  "description": "WhatsApp AI Sales Agent for TechXZone",
+  "description": "TechXZone WhatsApp Bot",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
   },
   "dependencies": {
-  "@google/genai": "^0.1.1",
-  "@whiskeysockets/baileys": "^6.6.0",
-  "axios": "^1.6.0",
-  "express": "^4.18.2",
-  "pino": "^8.16.0",
-  "qrcode": "^1.5.3"
+    "@google/genai": "^0.1.1",
+    "@google/generative-ai": "^0.21.0",
+    "@whiskeysockets/baileys": "^6.6.0",
+    "axios": "^1.6.0",
+    "express": "^4.18.2",
+    "pino": "^8.16.0",
+    "qrcode": "^1.5.3"
+  }
 }
