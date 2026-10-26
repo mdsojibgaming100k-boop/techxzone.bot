@@ -126,7 +126,7 @@ async function updateCatalog() {
 updateCatalog();
 setInterval(updateCatalog, 15 * 60 * 1000);
 
-// ৪. স্মার্ট ক্যাটালগ ফিল্টারিং (দ্রুতগতির জন্য টপ ৬টি পণ্য)
+// ৪. স্মার্ট ক্যাটালগ ফিল্টারিং
 function getSmartCatalog(userQuery) {
   if (!productCatalog.length) return "পণ্য লোড হচ্ছে...";
   const q = (userQuery || "").toLowerCase();
@@ -194,7 +194,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (হ্যাং-প্রুফ ও ২০ সেকেন্ড নিরাপদ টাইমআউট)
+// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-3.8-flash সেট করা)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
@@ -243,8 +243,8 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // সরাসরি গুগলের দ্রুততম ও স্থিতিশীল মডেল
-  const modelName = "gemini-2.0-flash";
+  // 🚀 গুগলের নির্দেশিত অ্যাক্টিভ মডেল
+  const modelName = "gemini-3.8-flash";
 
   try {
     const model = genAI.getGenerativeModel({
@@ -256,7 +256,6 @@ ${relevantCatalog}
       }
     });
 
-    // ২০ সেকেন্ডের নিরাপদ টাইমআউট
     const timeoutPromise = new Promise((_, reject) =>
       setTimeout(() => reject(new Error("Timeout")), 20000)
     );
@@ -383,7 +382,7 @@ async function initWhatsApp(forceClean = false) {
 
         console.log(`[কাস্টমার]: ${text}`);
 
-        // মেসেজ সাথে সাথে Seen (Blue tick) করা এবং টাইপিং পাঠানো
+        // সাথে সাথে ব্লু টিক (Seen) করা এবং টাইপিং পাঠানো
         sock.readMessages([msg.key]).catch(() => {});
         sock.sendPresenceUpdate('composing', sender).catch(() => {});
 
@@ -411,7 +410,6 @@ async function initWhatsApp(forceClean = false) {
             await sock.sendMessage(sender, { text: aiReply });
           }
         } finally {
-          // রিপ্লাই পাঠানো শেষ হলে বা ফেইল হলেও টাইপিং অফ হবে
           sock.sendPresenceUpdate('paused', sender).catch(() => {});
         }
 
