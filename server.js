@@ -49,6 +49,11 @@ setInterval(() => {
 // ২. সম্পূর্ণ WhatsApp সেশন ডেটাবেজে ব্যাকআপ ও রিস্টোর
 async function restoreFullSession() {
   try {
+    // লোকাল ফাইলে নতুন সেশন থাকলে ডেটাবেজ থেকে নামিয়ে নষ্ট করবে না
+    if (fs.existsSync(SESSION_DIR)) {
+      const existing = await fsPromises.readdir(SESSION_DIR);
+      if (existing.includes('creds.json')) return true;
+    }
     const res = await axios.get('https://techxzone.shop/api.php?action=get_settings&key=wa_full_session_bundle', { timeout: 10000 });
     const bundle = res.data;
     if (bundle && typeof bundle === 'object' && bundle['creds.json']) {
@@ -339,7 +344,10 @@ async function initWhatsApp(forceClean = false) {
       logger: pino({ level: 'silent' }),
       auth: state,
       printQRInTerminal: false,
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      browser: ['Mac OS', 'Chrome', '14.4.1'],
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 0,
+      keepAliveIntervalMs: 10000,
       syncFullHistory: false,
       markOnlineOnConnect: false
     });
