@@ -184,7 +184,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. আপগ্রেডেড মানবিক এআই ইঞ্জিন (স্মার্ট সেলসম্যান ব্রেন)
+// ৬. আপগ্রেডেড মানবিক এআই ইঞ্জিন (বিদ্যুৎগতির লাইভ রেসপন্স)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
@@ -241,7 +241,8 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+  // ⚡ সচল ও দ্রুতগতির অফিশিয়াল মডেল তালিকা (বাতিল মডেল বাদ দেওয়া হয়েছে)
+  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash"];
 
   const storedEntry = conversationHistory.get(userPhone);
   let rawHistory = storedEntry?.history || [];
@@ -305,16 +306,32 @@ ${relevantCatalog}
 }
 
 // ৭. WhatsApp Baileys ইঞ্জিন (ফর্ম ও সাধারণ মেসেজ সঠিকভাবে পাঠানো)
-async function initWhatsApp() {
+async function initWhatsApp(forceClean = false) {
   try {
     if (sock) {
       try {
         sock.ev.removeAllListeners();
         sock.end(undefined); 
       } catch (e) {}
+      sock = null;
     }
 
-    await restoreFullSession();
+    if (forceClean) {
+      try {
+        if (fs.existsSync(SESSION_DIR)) {
+          await fsPromises.rm(SESSION_DIR, { recursive: true, force: true });
+        }
+      } catch (e) {}
+
+      try {
+        await axios.post('https://techxzone.shop/api.php?action=save_settings', {
+          key: 'wa_full_session_bundle',
+          data: {}
+        }, { timeout: 5000 });
+      } catch (e) {}
+    } else {
+      await restoreFullSession();
+    }
 
     const { state, saveCreds } = await useMultiFileAuthState(SESSION_DIR);
 
@@ -340,7 +357,7 @@ async function initWhatsApp() {
         isConnected = false;
         const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
         if (shouldReconnect) {
-          setTimeout(initWhatsApp, 3000);
+          setTimeout(() => initWhatsApp(false), 3000);
         } else {
           try { fs.rmSync(SESSION_DIR, { recursive: true, force: true }); } catch (e) {}
         }
@@ -384,9 +401,9 @@ async function initWhatsApp() {
         } catch (e) {}
 
         let aiReply = await generateAiReply(sender, text);
-        aiReply = aiReply.replace(/\*\*/g, '*'); // নিশ্চিতভাবে ডাবল স্টার দূর করা
+        aiReply = aiReply.replace(/\*\*/g, '*');
 
-        // 🚀 ফর্ম আলাদা এবং টেক্সট আলাদা মেসেজে পাঠানোর নিখুঁত সিস্টেম
+        // ফর্ম আলাদা এবং টেক্সট আলাদা মেসেজে পাঠানো
         const formRegex = /(📋\s*\*?ক্যাশ অন ডেলিভারি অর্ডার ফর্ম\*?[\s\S]*?━━━━━━━━━━━━━━━━━━━━)/;
         const match = aiReply.match(formRegex);
 
@@ -397,16 +414,13 @@ async function initWhatsApp() {
             .replace(/\[\[ORDER:(.*?)\]\]/g, '')
             .trim();
 
-          // ১ম মেসেজ: শুধু বোল্ড করা ফাঁকা ফর্ম (সহজে কপি করার জন্য)
           await sock.sendMessage(sender, { text: formText });
 
-          // ২য় মেসেজ: বাকি গাইডলাইন ও টিপস
           if (otherText) {
             await delay(1000);
             await sock.sendMessage(sender, { text: otherText });
           }
         } else {
-          // সাধারণ কথা হলে স্বাভাবিকভাবে এক মেসেজে যাবে
           await sock.sendMessage(sender, { text: aiReply });
         }
         
@@ -477,6 +491,12 @@ app.get('/', (req, res) => {
           <span class="badge">📦 মোট প্রোডাক্ট সিঙ্ক: ${productCatalog.length} টি</span>
         </div>
 
+        ${pairingErrorMessage ? `
+          <div style="background:#fee2e2;border:1px solid #fca5a5;color:#991b1b;padding:10px;border-radius:12px;font-size:12px;margin:10px 0;text-align:center;">
+            ${pairingErrorMessage}
+          </div>
+        ` : ''}
+
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
               <div style="color:#059669;font-weight:900;font-size:18px;">✅ WhatsApp সফলভাবে লাইভ আছে!</div>
@@ -515,6 +535,10 @@ app.get('/', (req, res) => {
                     <input type="text" name="phone" placeholder="যেমন: 01404277094" required autofocus />
                     <button type="submit" class="btn btn-green">📲 কোড নিন (Pairing Code)</button>
                   </form>
+
+                  <form action="/hard-reset" method="POST" style="margin-top:10px;">
+                    <button type="submit" class="btn btn-danger">🗑️ সেশন ক্লিয়ার / ফ্রেশ রিসেট</button>
+                  </form>
                  </div>`
             )
         }
@@ -524,7 +548,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ১০. পেয়ারিং কোড রিকোয়েস্ট
+// ১০. পেয়ারিং কোড রিকোয়েস্ট (স্থায়ী ফ্রেশ সকেট ফিক্স)
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
@@ -535,27 +559,31 @@ app.post('/get-code', async (req, res) => {
   pairingCode = null;
 
   try {
-    if (!sock || !sock.ws) {
-      await initWhatsApp();
-      await delay(2000);
-    }
+    await initWhatsApp(true);
+    await delay(3500);
 
-    if (sock && !sock.authState.creds.registered) {
-      await delay(1500);
+    if (sock) {
       const code = await sock.requestPairingCode(phone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
+    } else {
+      pairingErrorMessage = "WhatsApp সার্ভার শুরু হতে পারেনি। আবার চেষ্টা করুন।";
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error("Pairing Error:", err.message);
+    pairingErrorMessage = `কোড তৈরি হতে সমস্যা হয়েছে: ${err.message}`;
+  }
   res.redirect('/');
 });
 
 // ১১. কোড রি-সেন্ড
 app.post('/resend-code', async (req, res) => {
-  if (lastEnteredPhone && sock && !sock.authState.creds.registered) {
+  if (lastEnteredPhone && sock) {
     try {
       const code = await sock.requestPairingCode(lastEnteredPhone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
-    } catch (e) {}
+    } catch (e) {
+      pairingErrorMessage = "কোড পুনরায় পাঠাতে সমস্যা হয়েছে।";
+    }
   }
   res.redirect('/');
 });
@@ -577,28 +605,9 @@ app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   lastEnteredPhone = "";
   isConnected = false;
+  pairingErrorMessage = "";
 
-  try {
-    if (fs.existsSync(SESSION_DIR)) {
-      await fsPromises.rm(SESSION_DIR, { recursive: true, force: true });
-    }
-  } catch (e) {}
-
-  try {
-    await axios.post('https://techxzone.shop/api.php?action=save_settings', {
-      key: 'wa_full_session_bundle',
-      data: {}
-    }, { timeout: 5000 });
-  } catch (e) {}
-
-  if (sock) {
-    try { 
-      sock.ev.removeAllListeners();
-      sock.end(undefined); 
-    } catch (e) {}
-  }
-
-  setTimeout(initWhatsApp, 2000);
+  await initWhatsApp(true);
   res.redirect('/');
 });
 
@@ -633,5 +642,5 @@ app.options('/api/ai-chat', (req, res) => {
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  initWhatsApp();
+  initWhatsApp(false);
 });
