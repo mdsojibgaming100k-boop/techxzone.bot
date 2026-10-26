@@ -194,7 +194,7 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-2.5-flash ও 503 সুরক্ষা)
+// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-3.6-flash এবং gemini-3.5-flash-lite)
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
@@ -243,8 +243,8 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // 🚀 আপনার চাহিদা অনুযায়ী প্রধান মডেল gemini-2.5-flash এবং 503 সুরক্ষার জন্য ব্যাকআপ
-  const modelsToTry = ["gemini-2.5-flash", "gemini-3.8-flash"];
+  // 🚀 আপনার চাহিদা অনুযায়ী অ্যাক্টিভ মডেল
+  const modelsToTry = ["gemini-3.6-flash", "gemini-3.5-flash-lite"];
 
   for (const modelName of modelsToTry) {
     try {
@@ -258,7 +258,7 @@ ${relevantCatalog}
       });
 
       const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 15000)
+        setTimeout(() => reject(new Error("Timeout")), 12000)
       );
 
       const generatePromise = model.generateContent(userMessage);
