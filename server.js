@@ -184,13 +184,12 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. আপগ্রেডেড মানবিক এআই ইঞ্জিন (স্মার্ট সেলসম্যান ব্রেন)
+// ৬. আপগ্রেডেড মানবিক এআই ইঞ্জিন
 async function generateAiReply(userPhone, userMessage) {
   if (!genAI || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
-  // কাস্টমারের ফোন নম্বর ফরম্যাট করা (০১৭... আকারে)
   let cleanUserPhone = userPhone.replace(/@.*$/, '').replace(/[^0-9]/g, '');
   if (cleanUserPhone.startsWith('880')) {
     cleanUserPhone = '0' + cleanUserPhone.slice(3);
@@ -241,7 +240,8 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  const modelsToTry = ["gemini-3.5-flash-lite", "gemini-3.6-flash", "gemini-2.5-flash", "gemini-1.5-flash"];
+  // সঠিক ও কার্যকর Gemini মডেল তালিকা
+  const modelsToTry = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"];
 
   const storedEntry = conversationHistory.get(userPhone);
   let rawHistory = storedEntry?.history || [];
@@ -290,7 +290,6 @@ ${relevantCatalog}
         }
       }
 
-      // ডাবল স্টার (**) সম্পূর্ণ মুছে ফেলা
       replyText = replyText.replace(/\*\*/g, '*');
 
       cleanHistory.push({ role: "user", parts: [{ text: userMessage }] });
@@ -304,7 +303,7 @@ ${relevantCatalog}
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৭. WhatsApp Baileys ইঞ্জিন (ফর্ম ও সাধারণ মেসেজ সঠিকভাবে পাঠানো)
+// ৭. WhatsApp Baileys ইঞ্জিন
 async function initWhatsApp() {
   try {
     if (sock) {
@@ -384,9 +383,8 @@ async function initWhatsApp() {
         } catch (e) {}
 
         let aiReply = await generateAiReply(sender, text);
-        aiReply = aiReply.replace(/\*\*/g, '*'); // নিশ্চিতভাবে ডাবল স্টার দূর করা
+        aiReply = aiReply.replace(/\*\*/g, '*');
 
-        // 🚀 ফর্ম আলাদা এবং টেক্সট আলাদা মেসেজে পাঠানোর নিখুঁত সিস্টেম
         const formRegex = /(📋\s*\*?ক্যাশ অন ডেলিভারি অর্ডার ফর্ম\*?[\s\S]*?━━━━━━━━━━━━━━━━━━━━)/;
         const match = aiReply.match(formRegex);
 
@@ -397,16 +395,13 @@ async function initWhatsApp() {
             .replace(/\[\[ORDER:(.*?)\]\]/g, '')
             .trim();
 
-          // ১ম মেসেজ: শুধু বোল্ড করা ফাঁকা ফর্ম (সহজে কপি করার জন্য)
           await sock.sendMessage(sender, { text: formText });
 
-          // ২য় মেসেজ: বাকি গাইডলাইন ও টিপস
           if (otherText) {
             await delay(1000);
             await sock.sendMessage(sender, { text: otherText });
           }
         } else {
-          // সাধারণ কথা হলে স্বাভাবিকভাবে এক মেসেজে যাবে
           await sock.sendMessage(sender, { text: aiReply });
         }
         
@@ -473,9 +468,16 @@ app.get('/', (req, res) => {
       <div class="card">
         <h2 style="margin:0 0 4px;text-align:center;font-size:20px;">TechXZone WhatsApp Bot</h2>
         <p style="text-align:center;color:#64748b;font-size:12px;margin:0 0 10px;">Real-Time Fast Speed & Live Typing</p>
+        
         <div style="text-align:center;">
           <span class="badge">📦 মোট প্রোডাক্ট সিঙ্ক: ${productCatalog.length} টি</span>
         </div>
+
+        ${pairingErrorMessage ? `
+          <div style="background:#fee2e2; border:1px solid #fca5a5; color:#991b1b; padding:12px; border-radius:14px; font-size:13px; margin: 12px 0; text-align:center; font-weight:500;">
+            ${pairingErrorMessage}
+          </div>
+        ` : ''}
 
         ${isConnected 
           ? `<div style="background:#ecfdf5;border:2px solid #a7f3d0;padding:20px;border-radius:18px;text-align:center;">
@@ -524,7 +526,7 @@ app.get('/', (req, res) => {
   `);
 });
 
-// ১০. পেয়ারিং কোড রিকোয়েস্ট
+// ১০. পেয়ারিং কোড রিকোয়েস্ট (সমস্যা মুক্ত)
 app.post('/get-code', async (req, res) => {
   let phone = (req.body.phone || '').replace(/[^0-9]/g, '');
   if (!phone) return res.redirect('/');
@@ -535,27 +537,49 @@ app.post('/get-code', async (req, res) => {
   pairingCode = null;
 
   try {
-    if (!sock || !sock.ws) {
+    // সকেট না থাকলে বা ডিসকানেক্ট থাকলে নতুন করে শুরু করা
+    if (!sock || !sock.ws || sock.ws.readyState !== 1) {
+      console.log('🔄 সকেট প্রস্তুত করা হচ্ছে...');
       await initWhatsApp();
-      await delay(2000);
+      await delay(3500);
     }
 
-    if (sock && !sock.authState.creds.registered) {
-      await delay(1500);
+    // আগের কোনো সেশন ফাইল রয়েছে কিনা চেক করা
+    if (sock && sock.authState && sock.authState.creds && sock.authState.creds.registered) {
+      pairingErrorMessage = "⚠️ WhatsApp ইতিমধ্যে রেজিস্টার্ড আছে! নতুন করে পেয়ার করতে নিচে 'লগআউট / ডিসকানেক্ট' চেপে আবার ট্রাই করুন।";
+      console.log(pairingErrorMessage);
+      return res.redirect('/');
+    }
+
+    if (sock) {
+      console.log(`📲 ${phone} নম্বরের জন্য পেয়ারিং কোড তৈরি হচ্ছে...`);
       const code = await sock.requestPairingCode(phone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
+      console.log(`🎉 পেয়ারিং কোড: ${pairingCode}`);
+    } else {
+      pairingErrorMessage = "WhatsApp সকেট শুরু হতে পারেনি। পেজ রিফ্রেশ করে আবার দিন।";
     }
-  } catch (err) {}
+  } catch (err) {
+    console.error("❌ Pairing Code Error:", err.message);
+    pairingErrorMessage = `কোড আনতে ব্যর্থ: ${err.message}। আবার চেষ্টা করুন।`;
+  }
+  
   res.redirect('/');
 });
 
 // ১১. কোড রি-সেন্ড
 app.post('/resend-code', async (req, res) => {
-  if (lastEnteredPhone && sock && !sock.authState.creds.registered) {
+  if (lastEnteredPhone) {
     try {
+      if (!sock || !sock.ws || sock.ws.readyState !== 1) {
+        await initWhatsApp();
+        await delay(3000);
+      }
       const code = await sock.requestPairingCode(lastEnteredPhone);
       pairingCode = code?.match(/.{1,4}/g)?.join('-') || code;
-    } catch (e) {}
+    } catch (e) {
+      pairingErrorMessage = "কোড পুনরায় পাঠাতে সমস্যা হয়েছে।";
+    }
   }
   res.redirect('/');
 });
@@ -563,6 +587,7 @@ app.post('/resend-code', async (req, res) => {
 // ১২. নম্বর পরিবর্তন
 app.post('/change-number', (req, res) => {
   pairingCode = null;
+  pairingErrorMessage = "";
   res.redirect('/');
 });
 
@@ -577,6 +602,7 @@ app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   lastEnteredPhone = "";
   isConnected = false;
+  pairingErrorMessage = "";
 
   try {
     if (fs.existsSync(SESSION_DIR)) {
