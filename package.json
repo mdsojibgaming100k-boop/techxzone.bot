@@ -7,11 +7,13 @@
     "start": "node server.js"
   },
   "dependencies": {
-    "@google/genai": "latest",
     "@whiskeysockets/baileys": "^6.6.0",
     "axios": "^1.6.0",
     "express": "^4.18.2",
     "pino": "^8.16.0",
     "qrcode": "^1.5.3"
+  },
+  "overrides": {
+    "libsignal": "npm:@whiskeysockets/libsignal-node@^2.0.1"
   }
 }
