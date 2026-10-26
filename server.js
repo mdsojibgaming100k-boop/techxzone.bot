@@ -4,7 +4,8 @@ const axios = require('axios');
 const fs = require('fs');
 const fsPromises = require('fs').promises;
 const path = require('path');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
+// 🚀 গুগলের নতুন অফিশিয়াল GenAI SDK
+const { GoogleGenAI } = require('@google/genai');
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 
@@ -22,9 +23,9 @@ const CATALOG_CACHE_FILE = path.join(__dirname, 'catalog_cache.json');
 // অ্যাডমিনের WhatsApp নম্বর
 const ADMIN_PHONE = process.env.ADMIN_PHONE || "8801404277094"; 
 
-// ১. Gemini API Key
+// ১. নতুন Google GenAI ক্লায়েন্ট ইনিশিয়ালাইজেশন
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY || "";
-let genAI = GEMINI_API_KEY ? new GoogleGenerativeAI(GEMINI_API_KEY) : null;
+const ai = GEMINI_API_KEY ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
 
 let isConnected = false;
 let pairingCode = null;
@@ -194,9 +195,9 @@ async function createWebsiteOrder(orderInfo) {
   }
 }
 
-// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (gemini-3.6-flash এবং gemini-3.5-flash-lite)
+// ৬. সুপার-ফাস্ট এআই ইঞ্জিন (নতুন @google/genai SDK দিয়ে তৈরি)
 async function generateAiReply(userPhone, userMessage) {
-  if (!genAI || !GEMINI_API_KEY) {
+  if (!ai || !GEMINI_API_KEY) {
     return "আসসালামু আলাইকুম ভাইয়া! Render ড্যাশবোর্ডে GEMINI_API_KEY সেট করুন।";
   }
 
@@ -243,27 +244,28 @@ async function generateAiReply(userPhone, userMessage) {
 ${relevantCatalog}
   `;
 
-  // 🚀 আপনার চাহিদা অনুযায়ী অ্যাক্টিভ মডেল
-  const modelsToTry = ["gemini-3.6-flash", "gemini-3.5-flash-lite"];
+  // 🚀 নতুন GenAI SDK মডেল তালিকা
+  const modelsToTry = ["gemini-2.5-flash", "gemini-3.6-flash"];
 
   for (const modelName of modelsToTry) {
     try {
-      const model = genAI.getGenerativeModel({
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Timeout")), 15000)
+      );
+
+      // নতুন @google/genai সিনট্যাক্স
+      const generatePromise = ai.models.generateContent({
         model: modelName,
-        systemInstruction: systemInstruction,
-        generationConfig: {
-          maxOutputTokens: 300,
+        contents: userMessage,
+        config: {
+          systemInstruction: systemInstruction,
+          maxOutputTokens: 350,
           temperature: 0.3
         }
       });
 
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("Timeout")), 12000)
-      );
-
-      const generatePromise = model.generateContent(userMessage);
-      const result = await Promise.race([generatePromise, timeoutPromise]);
-      let replyText = result.response.text();
+      const response = await Promise.race([generatePromise, timeoutPromise]);
+      let replyText = response.text;
 
       // অর্ডার প্লেসমেন্ট
       const orderMatch = replyText.match(/\[\[ORDER:(.*?)\]\]/);
