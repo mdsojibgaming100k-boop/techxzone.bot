@@ -500,12 +500,20 @@ app.get('/', (req, res) => {
                       <button type="submit" class="btn btn-gray" style="margin-top:0;">✏️ নম্বর পরিবর্তন</button>
                     </form>
                   </div>
+
+                  <form action="/hard-reset" method="POST" style="margin-top:8px;">
+                    <button type="submit" class="btn btn-danger" style="font-size:11px;padding:10px;">🧹 কোড না আসলে ফুল রিসেট (Force Clear)</button>
+                  </form>
                  </div>`
               : `<div>
                   <form action="/get-code" method="POST">
                     <label style="font-size:13px;font-weight:bold;color:#334155;">WhatsApp নম্বর দিন:</label>
                     <input type="text" name="phone" value="${lastEnteredPhone}" placeholder="যেমন: 01404277094" required autofocus />
                     <button type="submit" class="btn btn-green">📲 কোড নিন (Pairing Code)</button>
+                  </form>
+
+                  <form action="/hard-reset" method="POST" style="margin-top:10px;">
+                    <button type="submit" class="btn btn-danger" style="font-size:11px;padding:10px;">🧹 পুরোনো সেশন ফুল ক্লিয়ার করুন (Force Reset)</button>
                   </form>
                  </div>`
             )
@@ -600,10 +608,8 @@ app.post('/hard-reset', async (req, res) => {
   pairingErrorMessage = "";
   isConnected = false;
 
-  // ১. মেমোরির সমস্ত চ্যাট হিস্ট্রি ও লগ সম্পূর্ণ ক্লিয়ার করা
   conversationHistory.clear();
 
-  // ২. সকেট লাইভ কানেকশন সম্পূর্ণ বন্ধ ও রিমুভ করা
   if (sock) {
     try { 
       sock.ev.removeAllListeners();
@@ -612,14 +618,12 @@ app.post('/hard-reset', async (req, res) => {
     sock = null;
   }
 
-  // ৩. লোকাল ফোল্ডারে থাকা সমস্ত সেশন ফাইল ডিলিট করা
   try {
     if (fs.existsSync(SESSION_DIR)) {
       await fsPromises.rm(SESSION_DIR, { recursive: true, force: true });
     }
   } catch (e) {}
 
-  // ৪. রিমোট ডেটাবেজ থেকে সেশন বান্ডেল সম্পূর্ণ ফাঁকা বা ডিলিট করা
   try {
     await axios.post('https://techxzone.shop/api.php?action=save_settings', {
       key: 'wa_full_session_bundle',
