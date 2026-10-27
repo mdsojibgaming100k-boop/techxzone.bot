@@ -301,7 +301,7 @@ ${relevantCatalog}
   return "জি ভাইয়া! TechXZone-এ আপনাকে স্বাগতম। আপনি কোন প্রোডাক্টটি দেখতে চাচ্ছেন একটু জানাবেন কি?";
 }
 
-// ৭. WhatsApp Baileys ইঞ্জিন
+// ৭. WhatsApp Baileys ইঞ্জিন (লুপ ফিক্সড ও স্টেবল ব্রাউজার কনফিগ)
 async function initWhatsApp() {
   try {
     if (sock) {
@@ -320,9 +320,13 @@ async function initWhatsApp() {
       logger: pino({ level: 'silent' }),
       auth: state,
       printQRInTerminal: false,
-      browser: ['Ubuntu', 'Chrome', '20.0.04'],
+      // 🚀 হোয়াটসঅ্যাপ লুপ খাওয়ার সমস্যা এড়াতে অফিসিয়াল Mac/Chrome ব্রাউজার প্রফাইল ব্যবহার করা হলো
+      browser: ['Mac OS', 'Chrome', '121.0.0.0'],
       syncFullHistory: false,
-      markOnlineOnConnect: false
+      markOnlineOnConnect: true,
+      connectTimeoutMs: 60000,
+      defaultQueryTimeoutMs: 60000,
+      keepAliveIntervalMs: 15000
     });
 
     sock.ev.on('connection.update', (update) => {
@@ -336,9 +340,16 @@ async function initWhatsApp() {
 
       if (connection === 'close') {
         isConnected = false;
-        const shouldReconnect = lastDisconnect?.error?.output?.statusCode !== DisconnectReason.loggedOut;
+        const statusCode = lastDisconnect?.error?.output?.statusCode;
+        const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        
+        console.log(`⚠️ [WhatsApp] কানেকশন বন্ধ হয়েছে। কোড: ${statusCode}`);
+        
         if (shouldReconnect) {
           setTimeout(initWhatsApp, 3000);
+        } else {
+          // লগআউট হলে সেশন ফোল্ডার পরিষ্কার করে দেওয়া
+          try { fs.rmSync(SESSION_DIR, { recursive: true, force: true }); } catch (e) {}
         }
       } else if (connection === 'open') {
         isConnected = true;
@@ -502,7 +513,7 @@ app.get('/', (req, res) => {
                   </div>
 
                   <form action="/hard-reset" method="POST" style="margin-top:8px;">
-                    <button type="submit" class="btn btn-danger" style="font-size:11px;padding:10px;">🧹 কোড না আসলে ফুল রিসেট (Force Clear)</button>
+                    <button type="submit" class="btn btn-danger" style="font-size:11px;padding:10px;">🔄 লিক খেলে বা ঘুরলে ফুল রিসেট (Fix Loop)</button>
                   </form>
                  </div>`
               : `<div>
@@ -513,7 +524,7 @@ app.get('/', (req, res) => {
                   </form>
 
                   <form action="/hard-reset" method="POST" style="margin-top:10px;">
-                    <button type="submit" class="btn btn-danger" style="font-size:11px;padding:10px;">🧹 পুরোনো সেশন ফুল ক্লিয়ার করুন (Force Reset)</button>
+                    <button type="submit" class="btn btn-danger" style="font-size:11px;padding:10px;">🧹 ফুল ক্লিয়ার ও ক্যাশ মুছুন (Force Reset)</button>
                   </form>
                  </div>`
             )
@@ -544,7 +555,7 @@ app.post('/get-code', async (req, res) => {
     }
 
     await initWhatsApp();
-    await delay(2500);
+    await delay(3000); // পর্যাপ্ত সময় দেওয়া হলো যাতে সকেট সার্ভারের সাথে হ্যান্ডশেক সম্পন্ন করতে পারে
 
     if (sock && !sock.authState.creds.registered) {
       const code = await sock.requestPairingCode(phone);
@@ -568,7 +579,7 @@ app.post('/resend-code', async (req, res) => {
         sock = null;
       }
       await initWhatsApp();
-      await delay(2500);
+      await delay(3000);
 
       if (sock && !sock.authState.creds.registered) {
         const code = await sock.requestPairingCode(lastEnteredPhone);
@@ -600,7 +611,7 @@ app.post('/refresh-catalog', async (req, res) => {
   res.redirect('/');
 });
 
-// ১৩. ফুল ক্লিয়ার ও হার্ড রিসেট (সেশন, লগ ও মেমোরি সম্পূর্ণ মোছার সুপার সিস্টেম)
+// ১৩. ফুল ক্লিয়ার ও হার্ড রিসেট
 app.post('/hard-reset', async (req, res) => {
   pairingCode = null;
   qrCodeData = null;
@@ -631,7 +642,7 @@ app.post('/hard-reset', async (req, res) => {
     }, { timeout: 5000 });
   } catch (e) {}
 
-  console.log('🧹 [TechXZone] সমস্ত সেশন, লগ ও ক্যাশ সফলভাবে ফুল ক্লিয়ার করা হয়েছে!');
+  console.log('🧹 [TechXZone] লুপ ফিক্স করার জন্য সব সেশন ও ক্যাশ মুছে ফেলা হয়েছে!');
 
   setTimeout(initWhatsApp, 2000);
   res.redirect('/');
